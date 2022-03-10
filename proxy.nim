@@ -112,7 +112,7 @@ proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} =
             try:
                 let data = client.recv(4096)
                 let fut = await data.withTimeout(5000)
-                if fut and data.read.len() != 0:
+                if fut and data.read.len() != 0 and not remote.isClosed:
                     await remote.send(data.read)
                 else:
                     break
@@ -125,7 +125,7 @@ proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} =
             try:
                 let data = remote.recv(4096)
                 let fut = await data.withTimeout(5000)
-                if fut and data.read.len() != 0:
+                if fut and data.read.len() != 0 and not client.isClosed:
                     await client.send(data.read)
                 else:
                     break
@@ -215,7 +215,6 @@ proc start(port: int) {.async.} =
     server.setSockOpt(OptReuseAddr, true) 
     server.bindAddr(Port(port), "127.0.0.1")
     var client = newAsyncSocket(buffered=false)
-    client.close()
     try:
         server.listen()
         while true:
