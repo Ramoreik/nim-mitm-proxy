@@ -76,7 +76,6 @@ proc readHeaders(socket: AsyncSocket): Future[string] {.async.} =
 
 proc readBody(socket: AsyncSocket, size: int): Future[string] {.async.} = 
     var chunk_size = 4096
-    var size_left = size
     while result.len() != size:
         let chunk = waitFor socket.recv(chunk_size)
         result = result & chunk
@@ -107,24 +106,31 @@ proc sendRawRequest(target: AsyncSocket, req: string):
         result = await target.readHTTPRequest()
 
 proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} = 
+
     proc clientHasData() {.async.} =
         while not client.isClosed and not remote.isClosed:
-          let data = await client.recv(1024)
-          try:
-            await remote.send(data)
-          except:
-            echo getCurrentExceptionMsg()
+            try:
+                let data = client.recv(4096)
+                let fut = await data.withTimeout(5000)
+                if fut and data.read.len() != 0:
+                    await remote.send(data.read)
+                else:
+                    break
+            except:
+                echo getCurrentExceptionMsg()
         client.close()
-        remote.close()
 
     proc remoteHasData() {.async.} =
         while not remote.isClosed and not client.isClosed:
-          let data = await remote.recv(1024)
-          try:
-            await client.send(data)
-          except:
-            echo getCurrentExceptionMsg()
-        client.close()
+            try:
+                let data = remote.recv(4096)
+                let fut = await data.withTimeout(5000)
+                if fut and data.read.len() != 0:
+                    await client.send(data.read)
+                else:
+                    break
+            except:
+                echo getCurrentExceptionMsg()
         remote.close()
 
     try:
@@ -209,6 +215,7 @@ proc start(port: int) {.async.} =
     server.setSockOpt(OptReuseAddr, true) 
     server.bindAddr(Port(port), "127.0.0.1")
     var client = newAsyncSocket(buffered=false)
+    client.close()
     try:
         server.listen()
         while true:
