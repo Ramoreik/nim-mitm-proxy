@@ -13,7 +13,7 @@ let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
 
-let PROXY_HEADERS = ["Proxy-Connection"]
+let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
 # by inspiration I mean it saved me hours of trial and error since i'm dumb.
 
