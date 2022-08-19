@@ -210,26 +210,30 @@ proc processClient(client: AsyncSocket) {.async.} =
     else:
         echo fmt"[+] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host_info.host}:{host_info.port} "
         try: 
+            let host = host_info.host
+            let certs_d = "certs"
             # connect to remote
             let remote = newAsyncSocket(buffered=false)
             let remote_ctx = newContext()
             wrapSocket(remote_ctx, remote)
-            await remote.connect(host_info.host, Port(host_info.port))
+            await remote.connect(host, Port(host_info.port))
 
             # dynamically create a certificate from the previously generated CA.
             # one will be created for each host that doesn't already exist, allowing us to browser without any problems.
             # for now this will be 2 scripts, one launched on initial setup to generate the CA, the other one to create a host certificate.
-            var keyfile = "certs/test/" & host_info.host & ".key.pem"
-            var certfile = "certs/test/" & host_info.host & ".crt"
-            if not fileExists(keyfile) or not fileExists(certfile) or not match(host_info.host, VALID_HOST):
-                #this is giga scuffed, but it works :) will fix
-                discard execCmd("cd certs/test; bash create.sh " & host_info.host) 
+            var keyfile = joinPath(certs_d, host, host & ".key.pem")
+            var certfile = joinPath(certs_d, host, host & ".crt")
+            if not match(host, VALID_HOST):
+                echo "[!] Invalid host provided, terminating connection."
+                await client.send(BAD_REQUEST)
 
+            if not fileExists(keyfile) or not fileExists(certfile):
+                discard execCmd("scripts/create-cert.sh " & host) 
 
             # confirm tunneling with client
             await client.send(OK)
-            let ctx = newContext(keyFile = "certs/test/" & host_info.host & ".key.pem", certFile = "certs/test/" & host_info.host & ".crt")
-            wrapConnectedSocket(ctx, client, handshakeAsServer, hostname = host_info.host)
+            let ctx = newContext(keyFile = keyfile, certFile = certfile)
+            wrapConnectedSocket(ctx, client, handshakeAsServer, hostname = host)
 
             asyncCheck tunnel(client, remote)
         except:
@@ -253,5 +257,9 @@ proc start(port: int) {.async.} =
 
 
 when isMainModule:
+    if not dirExists("certs"):
+        echo "[!] Root CA not found, generating :: certs/ca.pem"
+        discard execCmd("scripts/genca.sh")
+
     asyncCheck start(8081)
     runForever()
