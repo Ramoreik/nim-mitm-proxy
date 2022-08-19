@@ -42,6 +42,10 @@ let TEMPLATE_FILE = CONFIG_D & "/template.cnf"
 # TODO: Reimplement the certificate generation without bash
 # TODO: Add better, granular error handling
 # TODO: Try to find edgecases in which the proxy fails.
+# TODO: fix edgecase in www.jumpstart.com
+# TODO: Look into invalid requestlines
+# TODO: Investigate weird crash on youtube when browsing videos
+
 
 # - - - - - - - - - - - - - - - - - -
 # PARSING + HEADER MODIFICATION
@@ -156,9 +160,9 @@ proc createCA(): bool =
         return false
     true
 
+
 proc generateHostCertificate(host: string): bool =
     let openssl = findExe("openssl")
-    let sed = findExe("sed")
     let server_d = CERTS_D & "/" & host
     let key_file = fmt"{server_d}/{host}.key.pem"
     let cert_file = fmt"{server_d}/{host}.crt"
@@ -178,11 +182,17 @@ proc generateHostCertificate(host: string): bool =
         return false
 
     if fileExists(TEMPLATE_FILE):
-        var config = open(TEMPLATE_FILE).readAll()
-        config = config.replace("{{domain}}", host) 
-        var f = open(cnf_file, fmWrite)
-        f.write(config)
-        f.close()
+        var tmpl = open(TEMPLATE_FILE)
+        var host_cnf = open(cnf_file, fmWrite)
+        try:
+            let config = tmpl.readAll().replace("{{domain}}", host) 
+            host_cnf.write(config)
+        except:
+            echo "[!] Error while templating the config file."
+            return false
+        finally:
+            tmpl.close()
+            host_cnf.close()
 
     echo "[*] Creating csr for: " & host
     if not execCmdWrap(
@@ -233,20 +243,20 @@ proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} =
                 let data = client.recv(4096)
                 let fut = await data.withTimeout(5000)
                 if fut and data.read.len() != 0 and not remote.isClosed:
-                    echo "RAW REQUEST: \n" & data.read
+                    #echo "RAW REQUEST: \n" & data.read
                     await remote.send(data.read)
                 else:
                     break
             except:
                 echo getCurrentExceptionMsg()
         client.close()
-
     proc remoteHasData() {.async.} =
         while not remote.isClosed and not client.isClosed:
             try:
                 let data = remote.recv(4096)
                 let fut = await data.withTimeout(5000)
                 if fut and data.read.len() != 0 and not client.isClosed:
+                    #echo "RAW RESPONSE: \n" & data.read
                     await client.send(data.read)
                 else:
                     break
@@ -346,6 +356,7 @@ proc processClient(client: AsyncSocket) {.async.} =
 
             # tunnel the two
             asyncCheck tunnel(client, remote)
+            echo host
         except:
             echo "[!] Could not resolve remote, terminating connection."
             await client.send(NOT_FOUND)
@@ -362,6 +373,8 @@ proc start(port: int) {.async.} =
         while true:
            client = await server.accept()
            asyncCheck processClient(client) 
+    except:
+        echo "[!] Unknown Error happened."
     finally:
         server.close()
 
