@@ -34,8 +34,4 @@ openssl x509 -req -extensions v3_req \
   -out "${SERVER_D}/${domain}.crt" \
   -extfile "${SERVER_D}/${domain}.cnf"
 
-echo "[*] Cleanup .."
-rm "${SERVER_D}/${domain}.cnf"
-rm "${SERVER_D}/${domain}.csr"
-
 echo "[*] Files created !"

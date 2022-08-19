@@ -16,6 +16,9 @@ let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
 
 let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
+let SCRIPTS_D = "scripts"
+let CERTS_D = "certs"
+
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
 # by inspiration I mean it saved me hours of trial and error since i'm dumb.
 
@@ -25,10 +28,17 @@ let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
 
 # to MITM, i have to place myself as the remote client, when im tunnelling.
 # meaning:
-# 1 - i pretend to tunnel, but i setup another listener wrapper with a certificate i control.
-# 2 - i open a client socket and connect to the destination using its certificate.
-# 3 - i tunnel my malicious client into the client connected to the remote
-# 4 - decrypt and inspect
+# 1 - I wrap the socket intented for the remote server with my ssl context
+# 2 - I start another socket and i negotiate ssl to the actual target
+# 3 - I tunnel the two and I can read the data in the tunnel.
+
+# For this to work I also have to generate certs on the fly
+# see genca.sh and create-cert.sh for now.
+# will clean this up soon.
+
+# TODO: Reimplement the certificate generation without bash
+# TODO: Add better, granular error handling
+# TODO: Try to find edgecases in which the proxy fails.
 
 # - - - - - - - - - - - - - - - - - -
 # PARSING + HEADER MODIFICATION
@@ -210,31 +220,34 @@ proc processClient(client: AsyncSocket) {.async.} =
     else:
         echo fmt"[+] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host_info.host}:{host_info.port} "
         try: 
-            let host = host_info.host
-            let certs_d = "certs"
-            # connect to remote
-            let remote = newAsyncSocket(buffered=false)
-            let remote_ctx = newContext()
-            wrapSocket(remote_ctx, remote)
-            await remote.connect(host, Port(host_info.port))
 
-            # dynamically create a certificate from the previously generated CA.
-            # one will be created for each host that doesn't already exist, allowing us to browser without any problems.
-            # for now this will be 2 scripts, one launched on initial setup to generate the CA, the other one to create a host certificate.
-            var keyfile = joinPath(certs_d, host, host & ".key.pem")
-            var certfile = joinPath(certs_d, host, host & ".crt")
+            let host = host_info.host
+            let keyfile = joinPath(CERTS_D, host, host & ".key.pem")
+            let certfile = joinPath(CERTS_D, host, host & ".crt")
+
+            # preventing RCE 🤡
             if not match(host, VALID_HOST):
                 echo "[!] Invalid host provided, terminating connection."
                 await client.send(BAD_REQUEST)
 
+            # generate cert for remote if it doesn't exist.
             if not fileExists(keyfile) or not fileExists(certfile):
-                discard execCmd("scripts/create-cert.sh " & host) 
+                discard execCmd(SCRIPTS_D & "/create-cert.sh " & host) 
+
+            # connect to remote and negotiate SSL
+            let remote = newAsyncSocket(buffered=false)
+            let remote_ctx = newContext(verifyMode = CVerifyNone)
+            wrapSocket(remote_ctx, remote)
+            await remote.connect(host, Port(host_info.port))
 
             # confirm tunneling with client
             await client.send(OK)
+
+            # wrap with my own SSL context
             let ctx = newContext(keyFile = keyfile, certFile = certfile)
             wrapConnectedSocket(ctx, client, handshakeAsServer, hostname = host)
 
+            # tunnel the two
             asyncCheck tunnel(client, remote)
         except:
             echo "[!] Could not resolve remote, terminating connection."
@@ -259,7 +272,8 @@ proc start(port: int) {.async.} =
 when isMainModule:
     if not dirExists("certs"):
         echo "[!] Root CA not found, generating :: certs/ca.pem"
-        discard execCmd("scripts/genca.sh")
+        echo "[!] Do not forget to import/use this CA !"
+        discard execCmd(SCRIPTS_D & "/genca.sh")
 
     asyncCheck start(8081)
     runForever()
