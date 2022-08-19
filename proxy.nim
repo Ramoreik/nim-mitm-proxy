@@ -10,14 +10,17 @@ let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
 let RESPONSELINE_REGEX = re"HTTP/[0-9]\.[0-9] [0-9]{3} [A-Z ]*"
 let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})?(\/[^\n\t]*)?"
-let VALID_HOST = re"^[A-Za-z0-9-]{2,63}"
+let VALID_HOST = re"^[^']{2,63}"
 
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
 
 let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
-let SCRIPTS_D = "scripts"
+let CONFIG_D = "config"
 let CERTS_D = "certs"
+let CA_KEY = CERTS_D & "/ca.key.pem"
+let CA_FILE = CERTS_D & "/ca.pem"
+let TEMPLATE_FILE = CONFIG_D & "/template.cnf"
 
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
 # by inspiration I mean it saved me hours of trial and error since i'm dumb.
@@ -112,6 +115,103 @@ proc readHTTPRequest(socket: AsyncSocket, body: bool = true ):
             result = (headers: proxyHeaders(headers), body: "\r\n\r\n")
     else:
         result = (headers: proxyHeaders(headers), body: "\r\n\r\n")
+
+# - - - - - - - - - - - - - - - - - -
+#   Certificate handling
+# - - - - - - - - - - - - - - - - - -
+proc execCmdWrap(cmd: string): bool =
+    if execCmd(cmd) != 0:
+        echo "[!] An error occured\n"
+        echo fmt"[?] {cmd}"
+        false
+    else:
+        true
+
+proc createCA(): bool =
+    let openssl = findExe("openssl")
+    let chmod = findExe("chmod")
+
+    if not dirExists(CERTS_D): createDir(CERTS_D)
+
+    echo fmt"[*] Creating root key :: " & CA_KEY
+    if not execCmdWrap(
+           openssl & fmt" genrsa -out '{CA_KEY}' 2048"):
+        return false
+
+    if not execCmdWrap(
+            chmod & fmt" 400 '{CA_KEY}'"):
+        return false
+
+    echo fmt"[*] Creating root CA :: {CA_FILE}"
+    if not execCmdWrap(
+            fmt"""
+                {openssl} req -new -x509 \
+                -subj '/CN=NemesisMITM' \
+                -extensions v3_ca \
+                -days 3650 \
+                -key '{CA_KEY}' \
+                -sha256 \
+                -out '{CA_FILE}' \
+                -config '{TEMPLATE_FILE}'"""): 
+        return false
+    true
+
+proc generateHostCertificate(host: string): bool =
+    let openssl = findExe("openssl")
+    let sed = findExe("sed")
+    let server_d = CERTS_D & "/" & host
+    let key_file = fmt"{server_d}/{host}.key.pem"
+    let cert_file = fmt"{server_d}/{host}.crt"
+    let csr_file = fmt"{server_d}/{host}.csr"
+    let cnf_file = fmt"{server_d}/{host}.cnf"
+    let srl_file = fmt"{server_d}/{host}.srl"
+
+    if not match(host, VALID_HOST): 
+        echo "[!] Invalid host provided."
+        return false
+
+    if not dirExists(server_d): createDir(server_d)
+
+    echo "[*] Creating key for: " & host
+    if not execCmdWrap(
+            openssl & fmt" genrsa -out '{key_file}'"): 
+        return false
+
+    if fileExists(TEMPLATE_FILE):
+        var config = open(TEMPLATE_FILE).readAll()
+        config = config.replace("{{domain}}", host) 
+        var f = open(cnf_file, fmWrite)
+        f.write(config)
+        f.close()
+
+    echo "[*] Creating csr for: " & host
+    if not execCmdWrap(
+            fmt"""
+            {openssl} req -subj '/CN={host}' \
+            -extensions v3_req \
+            -sha256 -new \
+            -key {key_file} \
+            -out {csr_file} \
+            -config {cnf_file}
+            """):
+        return false
+
+    echo "[*] Creating cert for: " & host 
+    if not execCmdWrap(
+            fmt"""
+            openssl x509 -req -extensions v3_req \
+              -days 3650 -sha256 \
+              -in '{csr_file}' \
+              -CA '{CA_FILE}' \
+              -CAkey '{CA_KEY}' \
+              -CAcreateserial \
+              -CAserial '{srl_file}' \
+              -out "{cert_file}" \
+              -extfile "{cnf_file}"            
+            """):
+        return false
+    true
+
 
 # - - - - - - - - - - - - - - - - - -
 #  PROXYING
@@ -225,14 +325,11 @@ proc processClient(client: AsyncSocket) {.async.} =
             let keyfile = joinPath(CERTS_D, host, host & ".key.pem")
             let certfile = joinPath(CERTS_D, host, host & ".crt")
 
-            # preventing RCE 🤡
-            if not match(host, VALID_HOST):
-                echo "[!] Invalid host provided, terminating connection."
-                await client.send(BAD_REQUEST)
-
             # generate cert for remote if it doesn't exist.
             if not fileExists(keyfile) or not fileExists(certfile):
-                discard execCmd(SCRIPTS_D & "/create-cert.sh " & host) 
+                if not generateHostCertificate(host):
+                    echo fmt"[!] Error occured while generating certificate for {host}"
+                    await client.send(BAD_REQUEST)
 
             # connect to remote and negotiate SSL
             let remote = newAsyncSocket(buffered=false)
@@ -273,7 +370,9 @@ when isMainModule:
     if not dirExists("certs"):
         echo "[!] Root CA not found, generating :: certs/ca.pem"
         echo "[!] Do not forget to import/use this CA !"
-        discard execCmd(SCRIPTS_D & "/genca.sh")
+        if not createCA():
+            echo "[!] Error while creating CA."
+            quit(QuitFailure)
 
     asyncCheck start(8081)
     runForever()
