@@ -1,4 +1,4 @@
-import std/[re, strutils, strformat, asyncnet, asyncdispatch, tables]
+import std/[re, strutils, strformat, asyncnet, asyncdispatch, tables, net]
 
 let BAD_REQUEST = "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\n\r\n"
 let OK = "HTTP/1.1 200 OK\r\n\r\n"
@@ -20,6 +20,13 @@ let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
 # This project is to learn the concepts involved in HTTP/HTTPS proxying, Websockets proxying and SOCKS. 
 # Next step - negotiate SSL between the proxy and client to be able to read traffic passing through.
 # a bit like : https://mitmproxy.org/
+
+# to MITM, i have to place myself as the remote client, when im tunnelling.
+# meaning:
+# 1 - i pretend to tunnel, but i setup another listener wrapper with a certificate i control.
+# 2 - i open a client socket and connect to the destination using its certificate.
+# 3 - i tunnel my malicious client into the client connected to the remote
+# 4 - decrypt and inspect
 
 # - - - - - - - - - - - - - - - - - -
 # PARSING + HEADER MODIFICATION
@@ -105,6 +112,9 @@ proc sendRawRequest(target: AsyncSocket, req: string):
     else:
         result = await target.readHTTPRequest()
 
+
+
+
 proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} = 
 
     proc clientHasData() {.async.} =
@@ -113,6 +123,7 @@ proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} =
                 let data = client.recv(4096)
                 let fut = await data.withTimeout(5000)
                 if fut and data.read.len() != 0 and not remote.isClosed:
+                    echo "RAW REQUEST: \n" & data.read
                     await remote.send(data.read)
                 else:
                     break
@@ -197,18 +208,25 @@ proc processClient(client: AsyncSocket) {.async.} =
             await client.send(BAD_REQUEST)
             client.close()
     else:
-        echo fmt"[+] Tunneling | {client.getPeerAddr()[0]} ->> {host_info.host}:{host_info.port} "
+        echo fmt"[+] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host_info.host}:{host_info.port} "
         try: 
             # connect to remote
             let remote = newAsyncSocket(buffered=false)
+            let remote_ctx = newContext()
+            wrapSocket(remote_ctx, remote)
             await remote.connect(host_info.host, Port(host_info.port))
+
             # confirm tunneling with client
             await client.send(OK)
+            let ctx = newContext(keyFile = "certs/test/mitm-key.pem", certFile = "certs/test/mitm-cert.pem")
+            wrapConnectedSocket(ctx, client, handshakeAsServer, hostname = host_info.host)
+
             asyncCheck tunnel(client, remote)
         except:
             echo "[!] Could not resolve remote, terminating connection."
             await client.send(NOT_FOUND)
             client.close()
+
 
 proc start(port: int) {.async.} = 
     let server = newAsyncSocket(buffered=false)
@@ -222,6 +240,7 @@ proc start(port: int) {.async.} =
            asyncCheck processClient(client) 
     finally:
         server.close()
+
 
 when isMainModule:
     asyncCheck start(8081)
