@@ -1,4 +1,5 @@
-import std/[re, strutils, strformat, asyncnet, asyncdispatch, tables, net]
+import std/[re, strutils, strformat, asyncnet, os,
+        asyncdispatch, tables, net, osproc]
 
 let BAD_REQUEST = "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\n\r\n"
 let OK = "HTTP/1.1 200 OK\r\n\r\n"
@@ -9,6 +10,7 @@ let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
 let RESPONSELINE_REGEX = re"HTTP/[0-9]\.[0-9] [0-9]{3} [A-Z ]*"
 let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})?(\/[^\n\t]*)?"
+let VALID_HOST = re"^[A-Za-z0-9-]{2,63}"
 
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
@@ -113,8 +115,6 @@ proc sendRawRequest(target: AsyncSocket, req: string):
         result = await target.readHTTPRequest()
 
 
-
-
 proc tunnel(client: AsyncSocket, remote: AsyncSocket) {.async.} = 
 
     proc clientHasData() {.async.} =
@@ -216,9 +216,19 @@ proc processClient(client: AsyncSocket) {.async.} =
             wrapSocket(remote_ctx, remote)
             await remote.connect(host_info.host, Port(host_info.port))
 
+            # dynamically create a certificate from the previously generated CA.
+            # one will be created for each host that doesn't already exist, allowing us to browser without any problems.
+            # for now this will be 2 scripts, one launched on initial setup to generate the CA, the other one to create a host certificate.
+            var keyfile = "certs/test/" & host_info.host & ".key.pem"
+            var certfile = "certs/test/" & host_info.host & ".crt"
+            if not fileExists(keyfile) or not fileExists(certfile) or not match(host_info.host, VALID_HOST):
+                #this is giga scuffed, but it works :) will fix
+                discard execCmd("cd certs/test; bash create.sh " & host_info.host) 
+
+
             # confirm tunneling with client
             await client.send(OK)
-            let ctx = newContext(keyFile = "certs/test/mitm-key.pem", certFile = "certs/test/mitm-cert.pem")
+            let ctx = newContext(keyFile = "certs/test/" & host_info.host & ".key.pem", certFile = "certs/test/" & host_info.host & ".crt")
             wrapConnectedSocket(ctx, client, handshakeAsServer, hostname = host_info.host)
 
             asyncCheck tunnel(client, remote)
