@@ -20,7 +20,6 @@ proc setupLogging*() =
 
 proc saveInteraction*(host: string, port: int, 
                      interaction: tuple[src_data: string, dst_data: string]): bool =
-
     let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
     if not dirExists(INTERACTIONS_D): createDir(INTERACTIONS_D)
     if not dirExists(dirname): createDir(dirname)
