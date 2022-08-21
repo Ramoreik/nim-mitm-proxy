@@ -1,16 +1,13 @@
 import std/[strutils, strformat, logging,
             asyncnet, os, asyncdispatch, 
-            tables, net, streams, times]
-import libs/[parser, reader, certman]
+            tables, net, streams]
+import libs/[parser, reader, certman, utils]
 import cligen
 
 let BAD_REQUEST = "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\n\r\n"
 let OK = "HTTP/1.1 200 OK\r\n\r\n"
 let NOT_IMPLEMENTED = "HTTP/1.1 501 NOT IMPLEMENTED\r\nConnection: close\r\n\r\n"
 let NOT_FOUND = "HTTP/1.1 404 NOT FOUND\r\nConnection: close\r\n\r\n"
-
-let INTERACTIONS_D = "interactions"
-
 
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
 # by inspiration I mean it saved me hours of trial and error since i'm dumb.
@@ -39,33 +36,12 @@ proc sendRawRequest(target: AsyncSocket, req: string):
     else:
         result = await target.readHTTPRequest()
 
-proc saveInteraction(host: string, port: int, 
-                     interaction: tuple[src_data: string, dst_data: string]): bool =
-
-    let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
-    if not dirExists(INTERACTIONS_D): createDir(INTERACTIONS_D)
-    if not dirExists(dirname): createDir(dirname)
-    let dt = now()
-    let timestamp = dt.format("yyyy-MM-dd-HH:mm:ss")
-    let msg = "-- REQUEST --\n" & 
-              interaction[0] & 
-              "-- RESPONSE --\n" &
-              interaction[1]
-    try:
-        var f = open(joinPath(dirname, timestamp), fmWrite)
-        f.write(msg)
-        f.close()
-    except: return false
-    true
-
-
 
 proc tunnel(src: AsyncSocket, 
             dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
     var src_data = newStringStream()
     var dst_data = newStringStream()
     var excluded: bool
-
     proc srcHasData() {.async.} =
         try:
             while not src.isClosed and not dst.isClosed:
@@ -168,7 +144,6 @@ proc mitmHttps(client: AsyncSocket,
 proc processClient(client: AsyncSocket) {.async.} =
     let req = await readHTTPRequest(client)
     var headers = parseHeaders(req.headers)
-    var address = client.getPeerAddr()
     var requestline = 
         if headers.hasKey("requestline"): 
             headers["requestline"].split(" ") 
@@ -204,6 +179,8 @@ proc processClient(client: AsyncSocket) {.async.} =
 
             # mitm the connection
             let res = await mitmHttp(client, host, port, req)
+            if not saveInteraction(host, port, (req, res)):
+                log(lvlError, "Error while writing interaction to filesystem.")
         else:
             log(lvlError, "[processClient] This proxy method is only for HTTP.")
             await client.send(BAD_REQUEST)
@@ -212,16 +189,7 @@ proc processClient(client: AsyncSocket) {.async.} =
         log(lvlInfo, fmt"[processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
         let interaction = await mitmHttps(client, host, port)
         if not saveInteraction(host, port, interaction):
-            log(lvlError, "Error while logging interaction.")
-
-proc setupLogging() = 
-    var stdout = newConsoleLogger(
-        fmtStr = "[$time][$levelname][NemesisMITM]:",
-        levelThreshold = lvlInfo)
-    var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
-    addHandler(stdout)
-    addHandler(fileLog)
-
+            log(lvlError, "Error while writing interaction to filesystem.")
 proc start(port: int) = 
     let server = newAsyncSocket(buffered=false)
     server.setSockOpt(OptReuseAddr, true) 
