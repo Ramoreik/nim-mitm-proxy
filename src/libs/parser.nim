@@ -5,6 +5,7 @@ let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
 let RESPONSELINE_REGEX = re"HTTP/[0-9]\.[0-9] [0-9]{3} [A-Z ]*"
 let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})?(\/[^\n\t]*)?"
 let CONTENT_TYPE = re"Content-Type: ([^\r\n]*)\r\n"
+let CONTENT_LENGTH = re"Content-Length: ([^\r\n]*)\r\n"
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
 let PROXY_HEADERS = ["Proxy-Connection", "requestline", "responseline"]
@@ -52,10 +53,13 @@ proc proxyHeaders*(headers: Table[string, string]): string =
 
 # filter by checking content-type of request.
 proc excludeData*(req: string): bool = 
-    var matches = @[""]
-    if find(req, CONTENT_TYPE, matches) != -1:
-        if matches[0].split("/")[0] in ALLOWED_DATA_TYPES:
-            echo "ALLOWED"
+    var content_type = @[""]
+    var content_length = @[""]
+    if find(req, CONTENT_LENGTH, content_length) != -1:
+        if parseInt(content_length[0]) > 5000:
+            return true
+    if find(req, CONTENT_TYPE, content_type) != -1:
+        if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
             return false
         else:
             return true

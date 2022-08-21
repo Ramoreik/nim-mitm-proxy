@@ -1,6 +1,6 @@
 import std/[strutils, strformat, logging,
             asyncnet, os, asyncdispatch, 
-            tables, net, osproc]
+            tables, net, osproc, streams]
 import libs/[parser, reader, certman]
 import cligen
 
@@ -41,19 +41,22 @@ proc sendRawRequest(target: AsyncSocket, req: string):
 
 # TODO: Implement filtering so no binary data gets saved by default, otherwise it is very slow.
 proc tunnel(src: AsyncSocket, 
-            dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
-    var src_data: string
-    var dst_data: string
+            dst: AsyncSocket): Future[tuple[src_data: StringStream, dst_data: StringStream]] {.async.} =
+    var src_data = newStringStream()
+    var dst_data = newStringStream()
     proc srcHasData() {.async.} =
         try:
+            var excluded: bool
             while not src.isClosed and not dst.isClosed:
                 log(lvlDebug, "[tunnel][SRC] recv.")
                 let data = src.recv(4096)
                 let fut_data = await withTimeout(data, 2000)
                 if fut_data and data.read.len() != 0 and not dst.isClosed:
                     log(lvlDebug, "[tunnel][SRC] sending to DST.")
-                    if not excludeData(src_data):
-                        src_data = src_data & data.read
+                    if not excluded:
+                        src_data.write(data.read)
+                        excluded = excludeData(src_data.readAll())
+                        dst_data.setPosition(0)
                     await dst.send(data.read)
                     log(lvlDebug, "[tunnel][SRC] sent.")
                 else:
@@ -63,14 +66,17 @@ proc tunnel(src: AsyncSocket,
 
     proc dstHasData() {.async.} =
         try:
+            var excluded: bool
             while not dst.isClosed and not src.isClosed:
                 log(lvlDebug, "[tunnel][DST] recv.")
                 let data = dst.recv(4096)
                 let fut_data = await withTimeout(data, 1000)
                 if fut_data and data.read.len() != 0 and not src.isClosed:
                     log(lvlDebug, "[tunnel][DST] sending to SRC.")
-                    if not excludeData(dst_data):
-                        dst_data = dst_data & data.read
+                    if not excluded:
+                        dst_data.write(data.read)
+                        excluded = excludeData(dst_data.readAll())
+                        dst_data.setPosition(0)
                     await src.send(data.read)
                     log(lvlDebug, "[tunnel][DST] sent.")
                 else:
@@ -107,7 +113,7 @@ proc mitmHttp(client: AsyncSocket, host: string, port: int,
 
 proc mitmHttps(client: AsyncSocket, 
                host: string, 
-               port: int): Future[tuple[src_data: string, dst_data: string]] {.async.} =
+               port: int): Future[tuple[src_data: StringStream, dst_data: StringStream]] {.async.} =
     # handle certificate
     if not handleHostCertificate(host):
         log(lvlError,
@@ -178,8 +184,8 @@ proc processClient(client: AsyncSocket) {.async.} =
     else:
         log(lvlInfo, fmt"[processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
         let (src_data, dst_data) = await mitmHttps(client, host, port)
-        echo src_data
-        echo dst_data
+        # echo src_data.readAll()
+        # echo dst_data.readAll()
 
 proc setupLogging() = 
     var stdout = newConsoleLogger(
