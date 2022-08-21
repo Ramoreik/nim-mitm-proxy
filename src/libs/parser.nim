@@ -1,4 +1,4 @@
-import std/[re, tables, strutils, logging]
+import std/[re, tables, strutils]
 
 let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"

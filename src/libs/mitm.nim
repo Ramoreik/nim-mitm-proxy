@@ -1,6 +1,6 @@
 import std/[asyncnet, asyncdispatch, 
-            strutils ,streams, logging,
-            strformat, net, tables, os]
+            strutils ,streams, logging, nativesockets,
+            strformat, net, tables]
 import parser, reader, certman, utils
 
 let BAD_REQUEST = "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\n\r\n"
@@ -98,6 +98,7 @@ proc mitmHttp(client: AsyncSocket, host: string, port: int,
 proc mitmHttps(client: AsyncSocket, 
                host: string, 
                port: int): Future[tuple[src_data: string, dst_data: string]] {.async.} =
+
     # handle certificate
     if not handleHostCertificate(host):
         log(lvlError,
@@ -108,7 +109,11 @@ proc mitmHttps(client: AsyncSocket,
     let remote = newAsyncSocket(buffered=false)
     let remote_ctx = newContext(verifyMode = CVerifyNone)
     wrapSocket(remote_ctx, remote)
-    await remote.connect(host, Port(port))
+    try:
+        await remote.connect(host, Port(port))
+    except:
+        log(lvlError, "[processClient] Could not resolve remote, terminating connection.")
+        await client.send(NOT_FOUND)
 
     # confirm tunneling with client
     await client.send(OK)
@@ -173,10 +178,11 @@ proc processClient(client: AsyncSocket) {.async.} =
         if interaction != ("", ""):
             if not saveInteraction(host, port, interaction):
                 log(lvlError, "Error while writing interaction to filesystem.")
-proc start*(port: int) = 
+
+proc start*(address: string, port: int) = 
     let server = newAsyncSocket(buffered=false)
     server.setSockOpt(OptReuseAddr, true) 
-    server.bindAddr(Port(port), "127.0.0.1")
+    server.bindAddr(Port(port), address)
     try:
         server.listen()
         log(lvlInfo, "STARTED")

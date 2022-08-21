@@ -9,15 +9,6 @@ proc execCmdWrap*(cmd: string): bool =
         false
     else:
         true
-
-proc setupLogging*() = 
-    var stdout = newConsoleLogger(
-        fmtStr = "[$time][$levelname][NemesisMITM]:",
-        levelThreshold = lvlInfo)
-    var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
-    addHandler(stdout)
-    addHandler(fileLog)
-
 proc saveInteraction*(host: string, port: int, 
                      interaction: tuple[src_data: string, dst_data: string]): bool =
     let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
