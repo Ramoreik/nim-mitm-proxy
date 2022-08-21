@@ -1,7 +1,5 @@
-import std/[strutils, strformat, logging,
-            asyncnet, os, asyncdispatch, 
-            tables, net, streams]
-import libs/[utils, mitm, certman]
+import std/[logging, os, strformat]
+import libs/[mitm, certman]
 import cligen
 
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
@@ -20,11 +18,17 @@ import cligen
     # FIXME: fix edgecase in www.jumpstart.com, site doesn't load for some reason.
     # FIXME: Investigate weird crash on youtube when browsing videos, only on macos apparently.
 # TODO: See if data is encoded before writing the interaction, if it is, unencode it. EX gzip.
-# TODO: Refactor a bit
 
-when isMainModule:
-    setupLogging()
-    log(lvlInfo, "STARTING")
+proc setupLogging*() = 
+    var stdout = newConsoleLogger(
+        fmtStr = "[$time][$levelname][NemesisMITM]:",
+        levelThreshold = lvlInfo)
+    var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
+    addHandler(stdout)
+    addHandler(fileLog)
+
+proc run(host="127.0.01", port=8081) =
+    log(lvlInfo, fmt"STARTING on {host}:{$port}.")
     if not dirExists("certs"):
         log(lvlInfo,"Root CA not found, generating :: certs/ca.pem")
         log(lvlInfo,"Do not forget to import/use this CA !")
@@ -32,6 +36,13 @@ when isMainModule:
             log(lvlError,"[!] Error while creating CA.")
             quit(QuitFailure)
     try:
-        start(8081)
+        start(host, port)
     except:
         log(lvlError, "[start] " & getCurrentExceptionMsg())
+
+when isMainModule:
+    setupLogging()
+    dispatch run, help={
+        "host": "Specify the interface to listen on.",
+        "port": "Specify the port to listen on."}
+    
