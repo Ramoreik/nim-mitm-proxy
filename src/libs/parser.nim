@@ -1,4 +1,4 @@
-import std/[re, tables, strutils]
+import std/[re, tables, strutils, logging]
 
 let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
@@ -19,8 +19,8 @@ proc parseHeaders*(headers: string): Table[string, string] =
         elif re.find(header, RESPONSELINE_REGEX, matches) != -1:
             result["responseline"] = header
 
-proc parseProxyHost*(host: string): 
-        tuple[proto: string, host: string, port: int, route: string] = 
+proc parseProxyHost*(host: string): tuple[proto: string, host: string,
+                                          port: int, route: string] = 
     var matches: array[4, string]
     if re.find(host, PROXY_HOST_REGEX, matches) != -1:
         let host = matches[1]
