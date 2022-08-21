@@ -1,6 +1,6 @@
 import std/[strutils, strformat, logging,
             asyncnet, os, asyncdispatch, 
-            tables, net, osproc, streams]
+            tables, net, streams, times]
 import libs/[parser, reader, certman]
 import cligen
 
@@ -8,6 +8,8 @@ let BAD_REQUEST = "HTTP/1.1 400 BAD REQUEST\r\nConnection: close\r\n\r\n"
 let OK = "HTTP/1.1 200 OK\r\n\r\n"
 let NOT_IMPLEMENTED = "HTTP/1.1 501 NOT IMPLEMENTED\r\nConnection: close\r\n\r\n"
 let NOT_FOUND = "HTTP/1.1 404 NOT FOUND\r\nConnection: close\r\n\r\n"
+
+let INTERACTIONS_D = "interactions"
 
 
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
@@ -27,10 +29,8 @@ let NOT_FOUND = "HTTP/1.1 404 NOT FOUND\r\nConnection: close\r\n\r\n"
 # TODO: Fix Edgecases:
     # FIXME: fix edgecase in www.jumpstart.com, site doesn't load for some reason.
     # FIXME: Investigate weird crash on youtube when browsing videos, only on macos apparently.
+# TODO: See if data is encoded before writing the interaction, if it is, unencode it. EX gzip.
 
-# - - - - - - - - - - - - - - - - - -
-#  PROXYING
-# - - - - - - - - - - - - - - - - - -
 proc sendRawRequest(target: AsyncSocket, req: string): 
         Future[tuple[headers: string, body: string]] {.async.} =
     await target.send(req)
@@ -39,26 +39,47 @@ proc sendRawRequest(target: AsyncSocket, req: string):
     else:
         result = await target.readHTTPRequest()
 
-# TODO: Implement filtering so no binary data gets saved by default, otherwise it is very slow.
+proc saveInteraction(host: string, port: int, 
+                     interaction: tuple[src_data: string, dst_data: string]): bool =
+
+    let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
+    if not dirExists(INTERACTIONS_D): createDir(INTERACTIONS_D)
+    if not dirExists(dirname): createDir(dirname)
+    let dt = now()
+    let timestamp = dt.format("yyyy-MM-dd-HH:mm:ss")
+    let msg = "-- REQUEST --\n" & 
+              interaction[0] & 
+              "-- RESPONSE --\n" &
+              interaction[1]
+    try:
+        var f = open(joinPath(dirname, timestamp), fmWrite)
+        f.write(msg)
+        f.close()
+    except: return false
+    true
+
+
+
 proc tunnel(src: AsyncSocket, 
             dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
-    #var src_data = newStringStream()
-    #var dst_data = newStringStream()
+    var src_data = newStringStream()
+    var dst_data = newStringStream()
+    var excluded: bool
+
     proc srcHasData() {.async.} =
         try:
-            var excluded: bool
             while not src.isClosed and not dst.isClosed:
                 log(lvlDebug, "[tunnel][SRC] recv.")
                 let data = src.recv(4096)
                 let fut_data = await withTimeout(data, 2000)
                 if fut_data and data.read.len() != 0 and not dst.isClosed:
                     log(lvlDebug, "[tunnel][SRC] sending to DST.")
-                    #if not excluded:
-                   # #    src_data.write(data.read)
-                      #  excluded = excludeData(src_data.readAll())
-                    #    src_data.setPosition(0)
-                    #else:
-                       # src_data.close()
+                    if not excluded:
+                        src_data.write(data.read)
+                        excluded = excludeData(src_data.readAll())
+                        src_data.setPosition(0)
+                    else:
+                        src_data.close()
                     await dst.send(data.read)
                     log(lvlDebug, "[tunnel][SRC] sent.")
                 else:
@@ -68,34 +89,32 @@ proc tunnel(src: AsyncSocket,
 
     proc dstHasData() {.async.} =
         try:
-            var excluded: bool
             while not dst.isClosed and not src.isClosed:
                 log(lvlDebug, "[tunnel][DST] recv.")
                 let data = dst.recv(4096)
                 let fut_data = await withTimeout(data, 1000)
                 if fut_data and data.read.len() != 0 and not src.isClosed:
                     log(lvlDebug, "[tunnel][DST] sending to SRC.")
-                   # if not excluded:
-                     #   dst_data.write(data.read)
-                    #    excluded = excludeData(dst_data.readAll())
-                      #  dst_data.setPosition(0)
-                   # else:
-                   #     dst_data.close()
+                    if not excluded:
+                        dst_data.write(data.read)
+                        excluded = excludeData(dst_data.readAll())
+                        dst_data.setPosition(0)
+                    else:
+                        dst_data.close()
                     await src.send(data.read)
                     log(lvlDebug, "[tunnel][DST] sent.")
                 else:
                     break
         except:
             log(lvlError, "[tunnel] " & getCurrentExceptionMsg())
-    await srcHasData() and dstHasData() 
-    #result = (src_data.readAll(), dst_data.readAll())
-    result = ("", "")
-    #src_data.close()
-#    dst_data.close()
 
-# - - - - - - - - - - - - - - - - - -
-#  Server + client handling
-# - - - - - - - - - - - - - - - - - -
+    await srcHasData() and dstHasData() 
+    if not excluded:
+        result = (src_data.readAll(), dst_data.readAll())
+    else:
+        result = ("", "")
+    src_data.close()
+    dst_data.close()
 
 proc mitmHttp(client: AsyncSocket, host: string, port: int, 
               req: string): Future[string] {.async.} = 
@@ -149,6 +168,7 @@ proc mitmHttps(client: AsyncSocket,
 proc processClient(client: AsyncSocket) {.async.} =
     let req = await readHTTPRequest(client)
     var headers = parseHeaders(req.headers)
+    var address = client.getPeerAddr()
     var requestline = 
         if headers.hasKey("requestline"): 
             headers["requestline"].split(" ") 
@@ -190,7 +210,9 @@ proc processClient(client: AsyncSocket) {.async.} =
             client.close()
     else:
         log(lvlInfo, fmt"[processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
-        let (src_data, dst_data) = await mitmHttps(client, host, port)
+        let interaction = await mitmHttps(client, host, port)
+        if not saveInteraction(host, port, interaction):
+            log(lvlError, "Error while logging interaction.")
 
 proc setupLogging() = 
     var stdout = newConsoleLogger(
