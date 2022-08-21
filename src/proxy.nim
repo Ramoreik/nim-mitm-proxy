@@ -41,9 +41,9 @@ proc sendRawRequest(target: AsyncSocket, req: string):
 
 # TODO: Implement filtering so no binary data gets saved by default, otherwise it is very slow.
 proc tunnel(src: AsyncSocket, 
-            dst: AsyncSocket): Future[tuple[src_data: StringStream, dst_data: StringStream]] {.async.} =
-    var src_data = newStringStream()
-    var dst_data = newStringStream()
+            dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
+    #var src_data = newStringStream()
+    #var dst_data = newStringStream()
     proc srcHasData() {.async.} =
         try:
             var excluded: bool
@@ -53,10 +53,12 @@ proc tunnel(src: AsyncSocket,
                 let fut_data = await withTimeout(data, 2000)
                 if fut_data and data.read.len() != 0 and not dst.isClosed:
                     log(lvlDebug, "[tunnel][SRC] sending to DST.")
-                    if not excluded:
-                        src_data.write(data.read)
-                        excluded = excludeData(src_data.readAll())
-                        dst_data.setPosition(0)
+                    #if not excluded:
+                   # #    src_data.write(data.read)
+                      #  excluded = excludeData(src_data.readAll())
+                    #    src_data.setPosition(0)
+                    #else:
+                       # src_data.close()
                     await dst.send(data.read)
                     log(lvlDebug, "[tunnel][SRC] sent.")
                 else:
@@ -73,10 +75,12 @@ proc tunnel(src: AsyncSocket,
                 let fut_data = await withTimeout(data, 1000)
                 if fut_data and data.read.len() != 0 and not src.isClosed:
                     log(lvlDebug, "[tunnel][DST] sending to SRC.")
-                    if not excluded:
-                        dst_data.write(data.read)
-                        excluded = excludeData(dst_data.readAll())
-                        dst_data.setPosition(0)
+                   # if not excluded:
+                     #   dst_data.write(data.read)
+                    #    excluded = excludeData(dst_data.readAll())
+                      #  dst_data.setPosition(0)
+                   # else:
+                   #     dst_data.close()
                     await src.send(data.read)
                     log(lvlDebug, "[tunnel][DST] sent.")
                 else:
@@ -84,7 +88,10 @@ proc tunnel(src: AsyncSocket,
         except:
             log(lvlError, "[tunnel] " & getCurrentExceptionMsg())
     await srcHasData() and dstHasData() 
-    return (src_data, dst_data)
+    #result = (src_data.readAll(), dst_data.readAll())
+    result = ("", "")
+    #src_data.close()
+#    dst_data.close()
 
 # - - - - - - - - - - - - - - - - - -
 #  Server + client handling
@@ -113,7 +120,7 @@ proc mitmHttp(client: AsyncSocket, host: string, port: int,
 
 proc mitmHttps(client: AsyncSocket, 
                host: string, 
-               port: int): Future[tuple[src_data: StringStream, dst_data: StringStream]] {.async.} =
+               port: int): Future[tuple[src_data: string, dst_data: string]] {.async.} =
     # handle certificate
     if not handleHostCertificate(host):
         log(lvlError,
@@ -137,7 +144,7 @@ proc mitmHttps(client: AsyncSocket,
     result = await tunnel(client, remote)
     client.close()
     remote.close()
-    log(lvlDebug, "[start] Connection done.")
+    log(lvlInfo, "[start] Connection done.")
 
 proc processClient(client: AsyncSocket) {.async.} =
     let req = await readHTTPRequest(client)
@@ -184,8 +191,6 @@ proc processClient(client: AsyncSocket) {.async.} =
     else:
         log(lvlInfo, fmt"[processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
         let (src_data, dst_data) = await mitmHttps(client, host, port)
-        # echo src_data.readAll()
-        # echo dst_data.readAll()
 
 proc setupLogging() = 
     var stdout = newConsoleLogger(
@@ -203,8 +208,8 @@ proc start(port: int) =
         server.listen()
         log(lvlInfo, "STARTED")
         var connections = 0
+        var client = newAsyncSocket(buffered=false)
         while true:
-           var client = newAsyncSocket(buffered=false)
            client = waitFor server.accept()
            log(lvlDebug, " Connections: " & $connections)
            asyncCheck processClient(client) 
