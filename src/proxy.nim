@@ -26,9 +26,7 @@ let NOT_FOUND = "HTTP/1.1 404 NOT FOUND\r\nConnection: close\r\n\r\n"
 # TODO: Add better, granular error handling
 # TODO: Fix Edgecases:
     # FIXME: fix edgecase in www.jumpstart.com, site doesn't load for some reason.
-    # FIXME: Look into invalid requestlines, happening a lot.
     # FIXME: Investigate weird crash on youtube when browsing videos, only on macos apparently.
-    # FIXME: Investigate why ookla speedtest fails, fails everywhere with SIGSVE, no idea why.
 
 # - - - - - - - - - - - - - - - - - -
 #  PROXYING
@@ -41,8 +39,11 @@ proc sendRawRequest(target: AsyncSocket, req: string):
     else:
         result = await target.readHTTPRequest()
 
+# TODO: Implement filtering so no binary data gets saved by default, otherwise it is very slow.
 proc tunnel(src: AsyncSocket, 
             dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
+    var src_data: string
+    var dst_data: string
     proc srcHasData() {.async.} =
         try:
             while not src.isClosed and not dst.isClosed:
@@ -51,6 +52,8 @@ proc tunnel(src: AsyncSocket,
                 let fut_data = await withTimeout(data, 2000)
                 if fut_data and data.read.len() != 0 and not dst.isClosed:
                     log(lvlDebug, "[tunnel][SRC] sending to DST.")
+                    if not excludeData(src_data):
+                        src_data = src_data & data.read
                     await dst.send(data.read)
                     log(lvlDebug, "[tunnel][SRC] sent.")
                 else:
@@ -66,6 +69,8 @@ proc tunnel(src: AsyncSocket,
                 let fut_data = await withTimeout(data, 1000)
                 if fut_data and data.read.len() != 0 and not src.isClosed:
                     log(lvlDebug, "[tunnel][DST] sending to SRC.")
+                    if not excludeData(dst_data):
+                        dst_data = dst_data & data.read
                     await src.send(data.read)
                     log(lvlDebug, "[tunnel][DST] sent.")
                 else:
@@ -73,13 +78,14 @@ proc tunnel(src: AsyncSocket,
         except:
             log(lvlError, "[tunnel] " & getCurrentExceptionMsg())
     await srcHasData() and dstHasData() 
+    return (src_data, dst_data)
 
 # - - - - - - - - - - - - - - - - - -
 #  Server + client handling
 # - - - - - - - - - - - - - - - - - -
 
 proc mitmHttp(client: AsyncSocket, host: string, port: int, 
-              req: string) {.async.} = 
+              req: string): Future[string] {.async.} = 
         let remote = newAsyncSocket(buffered=false)
         try:
             # connect to remote
@@ -90,6 +96,7 @@ proc mitmHttp(client: AsyncSocket, host: string, port: int,
 
             #send response to client
             await client.send(res_info.headers & res_info.body)
+            return res_info.headers & res_info.body
         except:
             log(lvlError, "[processClient] Could not resolve remote, terminating connection.")
             await client.send(NOT_FOUND)
@@ -163,7 +170,7 @@ proc processClient(client: AsyncSocket) {.async.} =
             var req = proxyHeaders(headers) & req.body
 
             # mitm the connection
-            await mitmHttp(client, host, port, req)
+            let res = await mitmHttp(client, host, port, req)
         else:
             log(lvlError, "[processClient] This proxy method is only for HTTP.")
             await client.send(BAD_REQUEST)
@@ -171,6 +178,8 @@ proc processClient(client: AsyncSocket) {.async.} =
     else:
         log(lvlInfo, fmt"[processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
         let (src_data, dst_data) = await mitmHttps(client, host, port)
+        echo src_data
+        echo dst_data
 
 proc setupLogging() = 
     var stdout = newConsoleLogger(
