@@ -4,7 +4,8 @@ let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
 let RESPONSELINE_REGEX = re"HTTP/[0-9]\.[0-9] [0-9]{3} [A-Z ]*"
 let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})?(\/[^\n\t]*)?"
-let CONTENT_TYPE = re"Content-Type: ([^\r\n]*)\r\n"
+let CONTENT_TYPE = re"Content-Type: ([^\r\n]*\r\n)"
+let ACCEPT_ENCODING = re"Accept-Encoding: ([^\r\n]*)\r\n"
 let CONTENT_LENGTH = re"Content-Length: ([^\r\n]*)\r\n"
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
@@ -50,6 +51,15 @@ proc proxyHeaders*(headers: Table[string, string]): string =
         if not PROXY_HEADERS.contains(k) :
             result = result & join([k, v], ": ") & "\r\n"
     result = result & "\r\n"
+
+proc removeEncoding*(req: string): string =
+    var encoding = @[""]
+    if find(req, ACCEPT_ENCODING, encoding) != -1:
+        log(lvlInfo, encoding)
+        if len(encoding) > 0:
+            return req.replace(encoding[0], "")
+    return req
+    
 
 # filter by checking content-type of request.
 proc excludeData*(req: string): bool = 

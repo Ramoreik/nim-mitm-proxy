@@ -8,6 +8,7 @@ let OK = "HTTP/1.1 200 OK\r\n\r\n"
 let NOT_IMPLEMENTED = "HTTP/1.1 501 NOT IMPLEMENTED\r\nConnection: close\r\n\r\n"
 let NOT_FOUND = "HTTP/1.1 404 NOT FOUND\r\nConnection: close\r\n\r\n"
 
+
 proc sendRawRequest(target: AsyncSocket, req: string): 
         Future[tuple[headers: string, body: string]] {.async.} =
     await target.send(req)
@@ -15,7 +16,6 @@ proc sendRawRequest(target: AsyncSocket, req: string):
         result = await target.readHTTPRequest(body=false)
     else:
         result = await target.readHTTPRequest()
-
 
 proc tunnel(src: AsyncSocket, 
             dst: AsyncSocket): Future[tuple[src_data: string, dst_data: string]] {.async.} =
@@ -35,7 +35,7 @@ proc tunnel(src: AsyncSocket,
                         excluded = excludeData(src_data.readAll())
                     else:
                         src_data.close()
-                    await dst.send(data.read)
+                    await dst.send(removeEncoding(data.read))
                     log(lvlDebug, "[tunnel][SRC] sent.")
                 else:
                     break
