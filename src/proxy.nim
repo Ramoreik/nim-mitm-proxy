@@ -27,7 +27,7 @@ proc setupLogging*() =
     addHandler(stdout)
     addHandler(fileLog)
 
-proc run(host: string ="127.0.01", port: int =8081, web_port: int=1337) =
+proc run(host: string ="127.0.01", port: int =8081) =
     setupLogging()
     log(lvlInfo, fmt"STARTING on {host}:{$port}.")
     if not dirExists("certs"):
@@ -44,6 +44,5 @@ proc run(host: string ="127.0.01", port: int =8081, web_port: int=1337) =
 when isMainModule:
  dispatch run, help={
      "host": "Specify the interface to listen on.",
-     "port": "Specify the port to listen on.",
-     "web_port": "Specify the port for the web interface to listen on."}
+     "port": "Specify the port to listen on."}
  
