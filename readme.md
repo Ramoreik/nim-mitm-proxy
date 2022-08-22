@@ -26,7 +26,15 @@ nim r -d:ssl proxy.nim
 
 # For release:
 nim c -d:ssl -d:release proxy.nim
-./proxy.nim
+./proxy.nim --host 127.0.0.1 --port 8081
+# This will launch the proxy, the requests/responses will be written to disk in './interactions' directory.
+
+
+# If you want to use the webapp
+cd webapp
+pip install -r requirements.txt
+./app.py
+
 ```
 
 For now, it is pretty scuffed, but it's a WIP.
