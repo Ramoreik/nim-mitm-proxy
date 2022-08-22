@@ -55,6 +55,9 @@ proc proxyHeaders*(headers: Table[string, string]): string =
 proc excludeData*(req: string): bool = 
     var content_type = @[""]
     var content_length = @[""]
+    if find(req, CONTENT_LENGTH, content_length) != -1:
+        if parseInt(content_length[0]) > 50000:
+            return true
     if find(req, CONTENT_TYPE, content_type) != -1:
         if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
             return false
