@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  </head>
+  <body>
+    {% if interactions %}
+    	{% for interaction in interactions: %}
+  		<h3> {{ interaction[0] }}</h3>
+    		{% for r in interaction[1] %}
+    		<a href="/get/interaction?target={{interaction[0]}}&interaction={{r}}"> {{ r }}</a></br>
+    		{% endfor%}
+    	{% endfor %}
+    {% else %}
+      {% for d in domains %}
+        <a href="/show/{{d}}">{{d}}</a></br>
+      {% endfor %}
+    {% endif %}
+  </body>
+</html>
+
