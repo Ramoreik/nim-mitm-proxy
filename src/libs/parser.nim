@@ -1,4 +1,4 @@
-import std/[re, tables, strutils]
+import std/[re, tables, strutils, logging]
 
 let HEADER_REGEX = re"^([A-Za-z0-9-]*):(.*)$"
 let REQUESTLINE_REGEX = re"([A-Z]{1,511}) ([^ \n\t]*) HTTP\/[0-9]\.[0-9]"
@@ -55,9 +55,6 @@ proc proxyHeaders*(headers: Table[string, string]): string =
 proc excludeData*(req: string): bool = 
     var content_type = @[""]
     var content_length = @[""]
-    if find(req, CONTENT_LENGTH, content_length) != -1:
-        if parseInt(content_length[0]) > 5000:
-            return true
     if find(req, CONTENT_TYPE, content_type) != -1:
         if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
             return false

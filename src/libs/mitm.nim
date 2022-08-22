@@ -31,10 +31,8 @@ proc tunnel(src: AsyncSocket,
                 if fut_data and data.read.len() != 0 and not dst.isClosed:
                     log(lvlDebug, "[tunnel][SRC] sending to DST.")
                     if not excluded:
-                        let pos = src_data.getPosition()
                         src_data.write(data.read)
                         excluded = excludeData(src_data.readAll())
-                        src_data.setPosition(pos)
                     else:
                         src_data.close()
                     await dst.send(data.read)
@@ -53,10 +51,8 @@ proc tunnel(src: AsyncSocket,
                 if fut_data and data.read.len() != 0 and not src.isClosed:
                     log(lvlDebug, "[tunnel][DST] sending to SRC.")
                     if not excluded:
-                        let pos = src_data.getPosition()
                         dst_data.write(data.read)
-                        excluded = excludeData(dst_data.readAll())
-                        dst_data.setPosition(pos)
+                        excluded = excludeData(data.read)
                     else:
                         dst_data.close()
                     await src.send(data.read)
@@ -68,6 +64,8 @@ proc tunnel(src: AsyncSocket,
 
     await srcHasData() and dstHasData() 
     if not excluded:
+        src_data.setPosition(0)
+        dst_data.setPosition(0)
         result = (src_data.readAll(), dst_data.readAll())
     else:
         result = ("", "")
@@ -179,7 +177,7 @@ proc processClient(client: AsyncSocket) {.async.} =
             if not saveInteraction(host, port, interaction):
                 log(lvlError, "Error while writing interaction to filesystem.")
 
-proc start*(address: string, port: int) = 
+proc startMITMProxy*(address: string, port: int) {.async.} = 
     let server = newAsyncSocket(buffered=false)
     server.setSockOpt(OptReuseAddr, true) 
     server.bindAddr(Port(port), address)
@@ -189,7 +187,7 @@ proc start*(address: string, port: int) =
         var connections = 0
         var client = newAsyncSocket(buffered=false)
         while true:
-           client = waitFor server.accept()
+           client = await server.accept()
            log(lvlDebug, " Connections: " & $connections)
            asyncCheck processClient(client) 
            connections += 1

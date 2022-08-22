@@ -1,5 +1,5 @@
-import std/[logging, os, strformat]
-import libs/[mitm, certman]
+import std/[logging, strformat, os, asyncdispatch]
+import libs/[mitm, certman ]
 import cligen
 
 # inspiration taken from: https://xmonader.github.io/nimdays/day15_tcprouter.html
@@ -27,7 +27,8 @@ proc setupLogging*() =
     addHandler(stdout)
     addHandler(fileLog)
 
-proc run(host="127.0.01", port=8081) =
+proc run(host: string ="127.0.01", port: int =8081, web_port: int=1337) =
+    setupLogging()
     log(lvlInfo, fmt"STARTING on {host}:{$port}.")
     if not dirExists("certs"):
         log(lvlInfo,"Root CA not found, generating :: certs/ca.pem")
@@ -36,13 +37,13 @@ proc run(host="127.0.01", port=8081) =
             log(lvlError,"[!] Error while creating CA.")
             quit(QuitFailure)
     try:
-        start(host, port)
+        waitFor startMITMProxy(host, port)
     except:
         log(lvlError, "[start] " & getCurrentExceptionMsg())
 
 when isMainModule:
-    setupLogging()
-    dispatch run, help={
-        "host": "Specify the interface to listen on.",
-        "port": "Specify the port to listen on."}
-    
+ dispatch run, help={
+     "host": "Specify the interface to listen on.",
+     "port": "Specify the port to listen on.",
+     "web_port": "Specify the port for the web interface to listen on."}
+ 
