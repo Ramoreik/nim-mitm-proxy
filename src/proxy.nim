@@ -18,6 +18,7 @@ import cligen
     # FIXME: fix edgecase in www.jumpstart.com, site doesn't load for some reason.
     # FIXME: Investigate weird crash on youtube when browsing videos, only on macos apparently.
 # TODO: See if data is encoded before writing the interaction, if it is, unencode it. EX gzip.
+# TODO: See if it would be possible to inject HTML/scripts in like ZAP does.
 
 proc setupLogging*() = 
     var stdout = newConsoleLogger(
