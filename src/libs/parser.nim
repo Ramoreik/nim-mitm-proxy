@@ -52,14 +52,13 @@ proc proxyHeaders*(headers: Table[string, string]): string =
             result = result & join([k, v], ": ") & "\r\n"
     result = result & "\r\n"
 
+# remove encoding to avoid having to decode.
 proc removeEncoding*(req: string): string =
     var encoding = @[""]
     if find(req, ACCEPT_ENCODING, encoding) != -1:
-        log(lvlInfo, encoding)
         if len(encoding) > 0:
             return req.replace(encoding[0], "")
     return req
-    
 
 # filter by checking content-type of request.
 proc excludeData*(req: string): bool = 
