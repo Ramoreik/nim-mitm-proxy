@@ -6,6 +6,7 @@ let RESPONSELINE_REGEX = re"HTTP/[0-9]\.[0-9] [0-9]{3} [A-Z ]*"
 let PROXY_HOST_REGEX = re"(http:\/\/|https:\/\/)?([^/<>:""'\|?*]*):?([0-9]{1,5})?(\/[^\n\t]*)?"
 let CONTENT_TYPE = re"Content-Type: ([^\r\n]*\r\n)"
 let ACCEPT_ENCODING = re"Accept-Encoding: ([^\r\n]*)\r\n"
+let TRANSFER_ENCODING = re"Transfer-Encoding: ([^\r\n]*)\r\n"
 let CONTENT_LENGTH = re"Content-Length: ([^\r\n]*)\r\n"
 let HTTP_PROTO = "http"
 let HTTPS_PROTO = "https"
@@ -68,6 +69,9 @@ proc removeEncoding*(req: string): string =
     ## This is temporary, I will probable try decode gzip requests eventually.
     var encoding = @[""]
     if find(req, ACCEPT_ENCODING, encoding) != -1:
+        if len(encoding) > 0:
+            return req.replace(encoding[0], "")
+    if find(req, TRANSFER_ENCODING, encoding) != -1:
         if len(encoding) > 0:
             return req.replace(encoding[0], "")
     return req

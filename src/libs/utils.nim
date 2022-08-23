@@ -1,5 +1,6 @@
-import std/[osproc, strformat, 
+import std/[osproc, strformat, tables,
             logging, os, times]
+import parser
 
 let INTERACTIONS_D = "interactions"
 
@@ -15,8 +16,8 @@ proc execCmdWrap*(cmd: string): bool =
         true
 
 
-proc saveInteraction*(host: string, port: int, 
-                     interaction: tuple[src_data: string, dst_data: string]): bool =
+proc saveInteraction*(host: string, port: int, cid: string,
+                     interaction: seq[tuple[headers: string, body: string]]): bool =
     ## Saves an interaction to disk.
     ## Still very much a WIP, 
     # will potentially not use this later and favor a DB of some kind.
@@ -25,10 +26,14 @@ proc saveInteraction*(host: string, port: int,
     if not dirExists(dirname): createDir(dirname)
     let dt = now()
     let timestamp = dt.format("yyyy-MM-dd-HH:mm:ss")
-    let msg = interaction[0] & "\n---- SNIP ----\n" & interaction[1]
-    try:
-        var f = open(joinPath(dirname, timestamp), fmWrite)
-        f.write(msg)
-        f.close()
-    except: return false
+    for i in 1 .. interaction.high():
+        if i.mod(2) != 0:
+            let req = interaction[i - 1]
+            let res = interaction[i]
+            var msg = req.headers & req.body & "\n---- SNIP ----\n" & res.headers & res.body 
+            try:
+                var f = open(joinPath(dirname, fmt"{cid}-interaction-{timestamp}-{(i+1)/2}"), fmWrite)
+                f.write(msg)
+                f.close()
+            except: return false
     true
