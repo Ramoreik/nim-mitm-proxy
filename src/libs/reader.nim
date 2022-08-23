@@ -1,8 +1,11 @@
-import std/[asyncdispatch, asyncnet, strutils, tables]
+import std/[asyncdispatch, asyncnet, strutils, 
+            tables]
 import parser
 
 
 proc readHeaders*(socket: AsyncSocket): Future[string] {.async.} = 
+    ## Reads the header section of a request/response from the given socket.
+    ## Returns raw headers
     while true:
         var line: string
         line = await socket.recvLine()
@@ -10,14 +13,20 @@ proc readHeaders*(socket: AsyncSocket): Future[string] {.async.} =
             break
         result = result & line & "\r\n"
 
+
 proc readBody*(socket: AsyncSocket, size: int): Future[string] {.async.} = 
+    ## Reads the body section of a request/response from the given socket.
+    ## Returns raw body
     var chunk_size = 4096
     while result.len() != size:
         let chunk = waitFor socket.recv(chunk_size)
         result = result & chunk
 
+
 proc readHTTPRequest*(socket: AsyncSocket, body: bool = true ): 
         Future[tuple[headers: string, body: string]] {.async.} =
+    ## Reads a full HTTP request/response from the given socket.
+    ## returns a tuple representing the headers and body of the request/response.
     let raw_headers = await readHeaders(socket)
     let headers = parseHeaders(raw_headers)
     if body:
@@ -29,4 +38,3 @@ proc readHTTPRequest*(socket: AsyncSocket, body: bool = true ):
             result = (headers: proxyHeaders(headers), body: "\r\n\r\n")
     else:
         result = (headers: proxyHeaders(headers), body: "\r\n\r\n")
-

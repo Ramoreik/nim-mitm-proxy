@@ -1,4 +1,5 @@
-import std/[logging, strformat, os, asyncdispatch]
+import std/[logging, strformat, 
+            os, asyncdispatch]
 import libs/[mitm, certman ]
 import cligen
 
@@ -23,7 +24,9 @@ import cligen
 proc setupLogging*() = 
     var stdout = newConsoleLogger(
         fmtStr = "[$time][$levelname][NemesisMITM]:",
-        levelThreshold = lvlInfo)
+        levelThreshold = lvlDebug)
+        #levelThreshold = lvlInfo)
+
     var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
     addHandler(stdout)
     addHandler(fileLog)

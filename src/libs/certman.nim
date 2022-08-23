@@ -1,4 +1,5 @@
-import std/[strformat, strutils, os, re, net]
+import std/[strformat, strutils, 
+            os, re, net]
 import utils
 
 let CERTS_D = "certs"
@@ -10,11 +11,14 @@ let VALID_HOST = re"^[^']{2,63}"
 
 # CERTMAN :: in charge of generation of certificates and handling of MITM SSL contexts. 
 
+
 proc getKeyFilename(host: string): string =
     joinPath(CERTS_D, host, host & ".key.pem")
 
+
 proc getCertFilename(host: string): string =
     joinPath(CERTS_D, host, host & ".crt")
+
 
 proc getMITMContext*(host: string): SslContext =
     return newContext(
@@ -22,7 +26,11 @@ proc getMITMContext*(host: string): SslContext =
         certFile = getCertFilename(host)
     )
 
+
 proc createCA*(): bool =
+    ## Creates a CA from which to generate the other certs.
+    ## Only happens if the CERTS_D dir doesn't exist.
+    ## Uses openSSL binary.
     let openssl = findExe("openssl")
     let chmod = findExe("chmod")
 
@@ -51,7 +59,11 @@ proc createCA*(): bool =
         return false
     true
 
+
 proc generateHostCertificate(host: string): bool =
+    ## Generates a certificate with a proper SAN for the given host.
+    ## Uses the previously generated CA.
+    ## Uses openSSL binary.
     let openssl = findExe("openssl")
     let server_d = CERTS_D & "/" & host
     let key_file = fmt"{server_d}/{host}.key.pem"
@@ -112,14 +124,12 @@ proc generateHostCertificate(host: string): bool =
         return false
     true
 
+
 proc handleHostCertificate*(host: string): bool =
-        let keyfile = getKeyFilename(host)
-        let certfile = getCertFilename(host)         
-        if not fileExists(keyfile) or not fileExists(certfile):
-            if not generateHostCertificate(host):
-                return false
-        true
-
-
-
-
+    ## Wrapper proc to determine if a cert should be created or not.
+    let keyfile = getKeyFilename(host)
+    let certfile = getCertFilename(host)         
+    if not fileExists(keyfile) or not fileExists(certfile):
+        if not generateHostCertificate(host):
+            return false
+    true

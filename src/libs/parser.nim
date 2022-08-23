@@ -14,6 +14,9 @@ let ALLOWED_DATA_TYPES = ["text", "application", "multipart", "model", "message"
 
 
 proc parseHeaders*(headers: string): Table[string, string] =
+    ## Maps a raw header section to a Table.
+    ## Inserts the requestline and responseline headers.
+    ## Returns the populated table.
     for header in headers.splitLines():
         var matches: array[2, string]
         if re.find(header, HEADER_REGEX, matches) != -1:
@@ -23,8 +26,11 @@ proc parseHeaders*(headers: string): Table[string, string] =
         elif re.find(header, RESPONSELINE_REGEX, matches) != -1:
             result["responseline"] = header
 
+
 proc parseProxyHost*(host: string): tuple[proto: string, host: string,
                                           port: int, route: string] = 
+    ## Parse the host that we are asked to proxy to.
+    ## Returns a tuple representing each part of the host provided.
     var matches: array[4, string]
     if re.find(host, PROXY_HOST_REGEX, matches) != -1:
         let host = matches[1]
@@ -42,7 +48,11 @@ proc parseProxyHost*(host: string): tuple[proto: string, host: string,
     else:
         result = (proto: "", host: "", port: 80, route: "")
 
+
 proc proxyHeaders*(headers: Table[string, string]): string =
+    ## Create the header section for a raw request by using the provided table, 
+    ## returns string.
+    ## Will remove headers pertaining to the proxy, such headers are contained in PROXY_HEADERS.
     if headers.hasKey("requestline"):
         result = join([headers["requestline"], result], "\r\n")
     elif headers.hasKey("responseline"):
@@ -52,25 +62,35 @@ proc proxyHeaders*(headers: Table[string, string]): string =
             result = result & join([k, v], ": ") & "\r\n"
     result = result & "\r\n"
 
-# remove encoding to avoid having to decode.
+
 proc removeEncoding*(req: string): string =
+    ## This simply removes any encodings such as gzip.
+    ## This is temporary, I will probable try decode gzip requests eventually.
     var encoding = @[""]
     if find(req, ACCEPT_ENCODING, encoding) != -1:
         if len(encoding) > 0:
             return req.replace(encoding[0], "")
     return req
 
-# filter by checking content-type of request.
+
 proc excludeData*(req: string): bool = 
-    var content_type = @[""]
+    ## My Half-assed attempt at filtering out data.
+    ## Since the sockets seem to be reused for multiple request, It's making it hard.
+    ## Disable content-type checking for now, using content-length only.
+    ## TEMPORARY DEACTIVATION
+    # var content_type = @[""]
+    # if find(req, CONTENT_TYPE, content_type) != -1:
+    #     log(lvlDebug, "Content-Type: " & content_type)
+    #     if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
+    #         return false
+    #     else:
+    #         log(lvlDebug, "EXCLUDED: Content-Type: " & content_type)
+    #         return true
     var content_length = @[""]
     if find(req, CONTENT_LENGTH, content_length) != -1:
-        if parseInt(content_length[0]) > 50000:
-            return true
-    if find(req, CONTENT_TYPE, content_type) != -1:
-        if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
-            return false
-        else:
+        log(lvlDebug, "Content-Length: " & content_length)
+        if parseInt(content_length[0]) > 1000000:
+            log(lvlDebug, "EXCLUDED: Content-Length: " & content_length)
             return true
     else:
         return false
