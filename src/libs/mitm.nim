@@ -171,8 +171,12 @@ proc processClient(client: AsyncSocket, cid: string) {.async.} =
         interaction = await mitmHttps(client, host, port, cid)
 
     if interaction != "":
-        if not saveInteraction(host, port, cid, parseRequest(interaction, cid)):
-            log(lvlError, fmt"[{cid}] Error while writing interaction to filesystem.")
+       # DEVNOTE: to debug -- write raw streams
+       # let f = open(fmt"interactions/streams/{cid}", fmWrite)
+       # f.write(interaction)
+       # f.close()
+       if not saveInteraction(host, port, cid, parseRequest(interaction, cid)):
+           log(lvlError, fmt"[{cid}] Error while writing interaction to filesystem.")
 
 
 proc startMITMProxy*(address: string, port: int) {.async.} = 
@@ -192,4 +196,3 @@ proc startMITMProxy*(address: string, port: int) {.async.} =
        log(lvlError, "[start] " & getCurrentExceptionMsg())
     finally:
         server.close()
-

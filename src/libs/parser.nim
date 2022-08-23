@@ -81,15 +81,6 @@ proc excludeData*(req: string): bool =
     ## My Half-assed attempt at filtering out data.
     ## Since the sockets seem to be reused for multiple request, It's making it hard.
     ## Disable content-type checking for now, using content-length only.
-    ## TEMPORARY DEACTIVATION
-    # var content_type = @[""]
-    # if find(req, CONTENT_TYPE, content_type) != -1:
-    #     log(lvlDebug, "Content-Type: " & content_type)
-    #     if content_type[0].split("/")[0] in ALLOWED_DATA_TYPES:
-    #         return false
-    #     else:
-    #         log(lvlDebug, "EXCLUDED: Content-Type: " & content_type)
-    #         return true
     var content_length = @[""]
     if find(req, CONTENT_LENGTH, content_length) != -1:
         log(lvlDebug, "Content-Length: " & content_length)

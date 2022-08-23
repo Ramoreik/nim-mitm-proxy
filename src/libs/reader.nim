@@ -43,6 +43,7 @@ proc readHTTPRequest*(socket: AsyncSocket, body: bool = true ):
 proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, body: string]] =
     ## Attempts to parse an HTTP stream correctly.
     ## Very scuffed.
+    ## Should refactor + relocate most of this code.
     var requests: seq[tuple[headers: string, body: string]]
     log(lvlDebug, fmt"[{cid}][parseRequest][REQ_LENGTH][{$request.high()}]")
 
@@ -63,18 +64,16 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
             log(lvlDebug, fmt"[{cid}][parseRequest][INDEX][{$index}]")
             headers = parseHeaders(request[start_index .. index - 1])
             if not (headers.hasKey("requestline") or headers.hasKey("responseline")):
-                    log(lvlError, "EMPTY HEADERS !")
-
+                    log(lvlError, fmt"[{cid}]EMPTY HEADERS !")
 
             log(lvlDebug, fmt"[{cid}][parseRequest][INDEX][{index - 1}]")
             if headers.hasKey("Content-Length"):
                 let contentLength = parseInt(headers["Content-Length"].strip())
                 body = request[index .. index + contentLength - 1]
-                # log(lvlDebug, fmt"[parseRequest][parseRequest][BODY][{$body}]")
                 log(lvlDebug, fmt"[{cid}][Content-Length][{contentLength}]")
                 index = index + contentLength 
 
-            elif headers.hasKey("transfer-encoding"):
+            elif headers.hasKey("transfer-encoding") or headers.hasKey("Transfer-Encoding"):
                 ## Read the chunks and populate the body.
                 var chunks: seq[string]
                 while true:

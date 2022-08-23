@@ -21,6 +21,7 @@ proc saveInteraction*(host: string, port: int, cid: string,
     ## Saves an interaction to disk.
     ## Still very much a WIP, 
     # will potentially not use this later and favor a DB of some kind.
+    log(lvlDebug, fmt"[{cid}][REQUESTS NUMBER]{len(interaction)}")
     let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
     if not dirExists(INTERACTIONS_D): createDir(INTERACTIONS_D)
     if not dirExists(dirname): createDir(dirname)
