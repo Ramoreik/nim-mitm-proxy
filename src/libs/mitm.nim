@@ -40,7 +40,6 @@ proc tunnel(src: AsyncSocket,
                 let data = src.recv(4096)
                 let future = await withTimeout(data, 2000)
                 if future and data.read.len() != 0 and not dst.isClosed:
-                    log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}][SRC] sending to DST.")
                     await dst.send(removeEncoding(data.read))
                     log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}][SRC] sent.")
                     if not excluded:
@@ -58,7 +57,6 @@ proc tunnel(src: AsyncSocket,
                 let data = dst.recv(4096)
                 let future = await withTimeout(data, 1500)
                 if future and data.read.len() != 0 and not src.isClosed:
-                    log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} <<-- {dst_addr}][DST] sending to SRC.")
                     await src.send(data.read)
                     log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} <<-- {dst_addr}][DST] sent.")
                     if not excluded:
@@ -176,7 +174,8 @@ proc processClient(client: AsyncSocket, cid: string) {.async.} =
        # f.write(interaction)
        # f.close()
        if not saveInteraction(host, port, cid, parseRequest(interaction, cid)):
-           log(lvlError, fmt"[{cid}] Error while writing interaction to filesystem.")
+           log(lvlError, 
+               fmt"[{cid}] Error while writing interaction to filesystem.")
 
 
 proc startMITMProxy*(address: string, port: int) {.async.} = 
