@@ -30,45 +30,49 @@ proc tunnel(src: AsyncSocket,
     ## Does not handle connection of the sockets, only the closure.
     let src_addr = src.getPeerAddr()
     let dst_addr = dst.getPeerAddr()
+    let baseLog = fmt"[{cid}][tunnel][{src_addr[0]}:{src_addr[1]} $1 {dst_addr[0]}:{dst_addr[1]}]"
     var excluded: bool
     let stream = newStringStream()
     defer: stream.close()
     proc srcHasData() {.async.} =
         try:
             while not src.isClosed and not dst.isClosed:
-                log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}[SRC] recv.")
+                log(lvlDebug, baseLog % ["-->>"] & "[SRC] recv.")
                 let data = src.recv(4096)
                 let future = await withTimeout(data, 2000)
                 if future and data.read.len() != 0 and not dst.isClosed:
                     await dst.send(removeEncoding(data.read))
-                    log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}][SRC] sent.")
+                    log(lvlDebug, baseLog % ["-->>"] & "[SRC] sent.")
                     if not excluded:
                         stream.write(data.read)
                         excluded = excludeData(data.read)
                 else:
                     break
         except:
-            log(lvlError, fmt"[{cid}][tunnel][{src_addr}] " & getCurrentExceptionMsg())
+            log(lvlError, baseLog % ["--/--"] & getCurrentExceptionMsg())
 
     proc dstHasData() {.async.} =
         try:
             while not dst.isClosed and not src.isClosed:
-                log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} <<-- {dst_addr}][DST] recv.")
+                log(lvlDebug, baseLog % ["<<--"] & "[DST] recv.")
                 let data = dst.recv(4096)
                 let future = await withTimeout(data, 1500)
                 if future and data.read.len() != 0 and not src.isClosed:
                     await src.send(data.read)
-                    log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} <<-- {dst_addr}][DST] sent.")
+                    log(lvlDebug, baseLog % ["<<--"] & "[DST] sent.")
                     if not excluded:
                         stream.write(data.read)
                         excluded = excludeData(data.read)
                 else:
                     break
         except:
-            log(lvlError, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}] " & getCurrentExceptionMsg())
+            log(lvlError, baseLog % ["--\\--"] & getCurrentExceptionMsg())
 
     await srcHasData() and dstHasData() 
-    log(lvlDebug, fmt"[{cid}][tunnel][{src_addr} -->> {dst_addr}] excluded: " & $excluded)
+
+    let indicator = if excluded: "--X--" else: "-----"
+    log(lvlDebug, 
+        baseLog % [indicator] & fmt"[excluded: {$excluded}]")
     if not excluded:
         stream.setPosition(0)
         result = stream.readAll()
