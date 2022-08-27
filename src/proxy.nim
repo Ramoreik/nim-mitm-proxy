@@ -21,6 +21,7 @@ import cligen
 # TODO: See if data is encoded before writing the interaction, if it is, unencode it. EX gzip.
 # TODO: See if it would be possible to inject HTML/scripts in like ZAP does.
 # TODO: Fix websockets, they seem to break. Read on SWITCH PROTOCOL and how it's done.
+# TODO: Tests for various proxy related attacks/dos on my implementation, it will probably be bad
 
 proc setupLogging*() = 
     var stdout = newConsoleLogger(

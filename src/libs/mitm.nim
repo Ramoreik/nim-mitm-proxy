@@ -30,49 +30,49 @@ proc tunnel(src: AsyncSocket,
     ## Does not handle connection of the sockets, only the closure.
     let src_addr = src.getPeerAddr()
     let dst_addr = dst.getPeerAddr()
-    let baseLog = fmt"[{cid}][tunnel][{src_addr[0]}:{src_addr[1]} $1 {dst_addr[0]}:{dst_addr[1]}]"
+    let baseLog = fmt"[{cid}][tunnel][{src_addr[0]}:{src_addr[1]} $1 {dst_addr[0]}:{dst_addr[1]}][$2] "
     var excluded: bool
     let stream = newStringStream()
     defer: stream.close()
     proc srcHasData() {.async.} =
         try:
             while not src.isClosed and not dst.isClosed:
-                log(lvlDebug, baseLog % ["-->>"] & "[SRC] recv.")
+                log(lvlDebug, baseLog % ["-->>", "SRC"] & "recv.")
                 let data = src.recv(4096)
                 let future = await withTimeout(data, 2000)
                 if future and data.read.len() != 0 and not dst.isClosed:
                     await dst.send(removeEncoding(data.read))
-                    log(lvlDebug, baseLog % ["-->>"] & "[SRC] sent.")
+                    log(lvlDebug, baseLog % ["-->>", "SRC"] & "sent.")
                     if not excluded:
                         stream.write(data.read)
                         excluded = excludeData(data.read)
                 else:
                     break
         except:
-            log(lvlError, baseLog % ["--/--"] & getCurrentExceptionMsg())
+            log(lvlError, baseLog % ["--/--", "SRC"] & getCurrentExceptionMsg())
 
     proc dstHasData() {.async.} =
         try:
             while not dst.isClosed and not src.isClosed:
-                log(lvlDebug, baseLog % ["<<--"] & "[DST] recv.")
+                log(lvlDebug, baseLog % ["<<--", "DST"] & "recv.")
                 let data = dst.recv(4096)
                 let future = await withTimeout(data, 1500)
                 if future and data.read.len() != 0 and not src.isClosed:
                     await src.send(data.read)
-                    log(lvlDebug, baseLog % ["<<--"] & "[DST] sent.")
+                    log(lvlDebug, baseLog % ["<<--", "DST"] & "sent.")
                     if not excluded:
                         stream.write(data.read)
                         excluded = excludeData(data.read)
                 else:
                     break
         except:
-            log(lvlError, baseLog % ["--\\--"] & getCurrentExceptionMsg())
+            log(lvlError, baseLog % ["--\\--", "DST"] & getCurrentExceptionMsg())
 
     await srcHasData() and dstHasData() 
 
     let indicator = if excluded: "--X--" else: "-----"
     log(lvlDebug, 
-        baseLog % [indicator] & fmt"[excluded: {$excluded}]")
+        baseLog % [indicator, "DONE"] & fmt"[excluded: {$excluded}]")
     if not excluded:
         stream.setPosition(0)
         result = stream.readAll()
@@ -81,22 +81,23 @@ proc tunnel(src: AsyncSocket,
 proc mitmHttp(client: AsyncSocket, 
               host: string, port: int, 
               req: string, cid: string): Future[string] {.async.} = 
-        ## Man in the Middle a given connection to its desired destination.
-        ## For HTTP, we simply forward the request and save the response.
-        ## Returns the interaction, containing the request and response in full.
-        let remote = newAsyncSocket(buffered=false)
-        try:
-            await remote.connect(host, Port(port))
-            var res_info = await remote.sendRawRequest(req)
-            await client.send(res_info.headers & res_info.body)
-            return req & "\r\n" & res_info.headers & res_info.body
-        except:
-            log(lvlError, fmt"[{cid}][mitmHTTP] Could not resolve remote, terminating connection.")
-            await client.send(NOT_FOUND)
-        finally:
-            log(lvlDebug, fmt"[{cid}][mitmHTTP] Done, closing.")
-            remote.close()
-            client.close()
+    ## Man in the Middle a given connection to its desired destination.
+    ## For HTTP, we simply forward the request and save the response.
+    ## Returns the interaction, containing the request and response in full.
+    let baseLog = fmt"[{cid}][mitmHTTP] "
+    let remote = newAsyncSocket(buffered=false)
+    try:
+        await remote.connect(host, Port(port))
+        var res_info = await remote.sendRawRequest(req)
+        await client.send(res_info.headers & res_info.body)
+        return req & "\r\n" & res_info.headers & res_info.body
+    except:
+        log(lvlError, baseLog & "Could not resolve remote, terminating connection.")
+        await client.send(NOT_FOUND)
+    finally:
+        log(lvlDebug, baseLog & "Done, closing.")
+        remote.close()
+        client.close()
 
 
 proc mitmHttps(client: AsyncSocket, 
@@ -107,9 +108,10 @@ proc mitmHttps(client: AsyncSocket,
     ## Then we connect to the desired destination with the right ssl context.
     ## Finally, we tunnel these two sockets together while saving the data in between.
     ## Returns the interaction, containing the request and response in full.
+    let baseLog = fmt"[{cid}][mitmHTTP] "
     if not handleHostCertificate(host):
         log(lvlError,
-            fmt"[{cid}][mitmHTTPS] Error occured while generating certificate for {host}.")
+            baseLog & fmt"Error occured while generating certificate for {host}.")
         await client.send(BAD_REQUEST)
 
     let remote = newAsyncSocket(buffered=false)
@@ -118,7 +120,7 @@ proc mitmHttps(client: AsyncSocket,
     try:
         await remote.connect(host, Port(port))
     except:
-        log(lvlError, fmt"[{cid}][mitmHTTPS] Could not resolve remote, terminating connection.")
+        log(lvlError, baseLog & "Could not resolve remote, terminating connection.")
         await client.send(NOT_FOUND)
     await client.send(OK)
 
@@ -130,13 +132,16 @@ proc mitmHttps(client: AsyncSocket,
         log(lvlError, "")
     client.close()
     remote.close()
-    log(lvlInfo, fmt"[{cid}][mitmHTTPS] Connection done.")
+    log(lvlInfo, baseLog & "Connection done.")
 
 
 proc processClient(client: AsyncSocket, cid: string) {.async.} =
     ## Processes and incoming request by parsing it.
     ## Forward the client to the right MITM handler, then persists the interaction.
     ## If requestline is CONNECT, treat as https, else http.
+    let baseLog = fmt"[{cid}][processClient]"
+    let tunnelingLog = 
+        baseLog & fmt"[$1] MITM Tunneling | {client.getPeerAddr()[0]} ->> {$2}:{$3}."
     let req = await readHTTPRequest(client)
     var headers = parseHeaders(req.headers)
     var requestline = 
@@ -146,40 +151,34 @@ proc processClient(client: AsyncSocket, cid: string) {.async.} =
             @[""]
 
     if requestline == @[""]:
-        log(lvlError, fmt"[{cid}][processClient] Invalid requestline, terminating connection.")
-        log(lvlDebug, fmt"[{cid}][processClient] {headers}")
+        log(lvlError, baseLog & "Invalid requestline, terminating connection.")
+        log(lvlDebug, baseLog & "{headers}")
         await client.send(BAD_REQUEST)
         client.close()
         return
 
     var (proto, host, port, route) = parseProxyHost(requestline[1])
     if host == "":
-        log(lvlError, fmt"[{cid}][processClient] Invalid host, terminating connection.")
+        log(lvlError, baseLog & "Invalid host, terminating connection.")
         await client.send(BAD_REQUEST)
         client.close()
         return
 
     var interaction: string
     if requestline[0] != "CONNECT" and proto == "http":
-        log(lvlInfo,
-            fmt"[{cid}][processClient][HTTP] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
+        log(lvlInfo, tunnelingLog % ["HTTP", host, $port])
         requestline[1] = route
         headers["requestline"] = join(requestline, " ") 
         var req = proxyHeaders(headers) & req.body
         interaction = await mitmHttp(client, host, port, req, cid)
     else:
-        log(lvlInfo, 
-            fmt"[{cid}][processClient][HTTPS] MITM Tunneling | {client.getPeerAddr()[0]} ->> {host}:{port}.")
+        log(lvlInfo, tunnelingLog % ["HTTPS", host, $port])
         interaction = await mitmHttps(client, host, port, cid)
 
     if interaction != "":
-       # DEVNOTE: to debug -- write raw streams
-       # let f = open(fmt"interactions/streams/{cid}", fmWrite)
-       # f.write(interaction)
-       # f.close()
        if not saveInteraction(host, port, cid, parseRequest(interaction, cid)):
            log(lvlError, 
-               fmt"[{cid}] Error while writing interaction to filesystem.")
+               baseLog & "Error while writing interaction to filesystem.")
 
 
 proc startMITMProxy*(address: string, port: int) {.async.} = 
@@ -190,7 +189,7 @@ proc startMITMProxy*(address: string, port: int) {.async.} =
     server.bindAddr(Port(port), address)
     try:
         server.listen()
-        log(lvlInfo, "STARTED")
+        log(lvlInfo, "[STARTED OK]")
         var client = newAsyncSocket(buffered=false)
         while true:
            client = await server.accept()

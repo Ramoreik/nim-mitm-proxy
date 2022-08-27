@@ -33,7 +33,8 @@ proc saveInteraction*(host: string, port: int, cid: string,
             let res = interaction[i]
             var msg = req.headers & req.body & "\n---- SNIP ----\n" & res.headers & res.body 
             try:
-                var f = open(joinPath(dirname, fmt"{cid}-interaction-{timestamp}-{(i+1)/2}"),
+                var f = open(
+                    joinPath(dirname, fmt"{cid}-interaction-{timestamp}-{(i+1)/2}"),
                     fmWrite)
                 f.write(msg)
                 f.close()

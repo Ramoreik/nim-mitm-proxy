@@ -68,9 +68,10 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
     ## Attempts to parse an HTTP stream correctly.
     ## Very scuffed.
     ## Should refactor + relocate most of this code.
+    let baseLog = fmt"[{cid}][parseRequest]"
     var requests: seq[tuple[headers: string, body: string]]
     log(lvlDebug, 
-        fmt"[{cid}][parseRequest][REQ_LENGTH][{$request.high()}]")
+        baseLog & fmt"[REQ_LENGTH][{$request.high()}]")
 
     # Iterate over the string and parse request/responses while doing so.
     # I should use a StringStream for this.
@@ -87,32 +88,35 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
             index += 4
 
             log(lvlDebug, 
-                fmt"[{cid}][{rid}][parseRequest][START_INDEX][{$start_index}]")
+                baseLog & fmt"[{rid}][START_INDEX][{$start_index}]")
             log(lvlDebug, 
-                fmt"[{cid}][{rid}][parseRequest][INDEX][{$index}]")
+                baseLog & fmt"[{rid}][INDEX][{$index}]")
             headers = parseHeaders(request[start_index .. index - 1])
             if not (headers.hasKey("requestline") or headers.hasKey("responseline")):
                     log(lvlError, 
-                        fmt"[{cid}][{rid}][parseRequest][EMPTY HEADERS !]")
+                        baseLog & fmt"[{rid}][EMPTY HEADERS !]")
 
             if headers.hasKey("Content-Length"):
                 let contentLength = parseInt(headers["Content-Length"].strip())
                 body = request[index .. index + contentLength - 1]
                 log(lvlDebug, 
-                    fmt"[{cid}][{rid}][parseRequest][Content-Length][{contentLength}]")
+                    baseLog & fmt"[{rid}][Content-Length][{contentLength}]")
                 index = index + contentLength 
 
             elif headers.hasKey("transfer-encoding") or headers.hasKey("Transfer-Encoding"):
                 log(lvlDebug, 
-                    fmt"[{cid}][{rid}][parseRequest][CHUNKED ENCODING]")
+                    baseLog & fmt"[{rid}][CHUNKED ENCODING]")
                 ## Since i remove the Accept-Encoding header, this should only be chunked.
                 ## But I will add validation.
                 ## Read the chunks and populate the body.
                 var chunks: seq[string]
                 while true:
                     var chunk_start = request.find("\r\n", start=index)
+                    if chunk_start == -1:
+                        break
+
                     log(lvlDebug, 
-                        fmt"[{cid}][{rid}][parseRequest][CHUNK_START][{chunk_start}]")
+                        baseLog & fmt"[{rid}][CHUNK_START][{chunk_start}]")
                     var hex_chunk_size = request[index .. chunk_start - 1]
 
                     var chunk_size: int
@@ -125,7 +129,7 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
                     ## -1 for 0 notation
                     chunks.add(request[chunk_start + 2 .. chunk_start + 2 + chunk_size - 1])
                     log(lvlDebug, 
-                        fmt"[{cid}][{rid}][parseRequest][CHUNKED][{chunk_size}]")
+                        baseLog & fmt"[{rid}][CHUNKED][{chunk_size}]")
 
                     ## +4 to skip \r\n twice
                     index = chunk_start + chunk_size + 4
