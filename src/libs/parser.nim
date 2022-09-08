@@ -143,8 +143,13 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
 
 
 proc removeEncoding*(req: string): string =
+    ## This completely removes any Transfer-Encoding headers from the given request
+    return req.replace(re"Transfer-Encoding: .*\r\n", "")
+
+
+proc removeUnsupportedEncoding*(req: string): string =
     ## This simply removes any encodings such as gzip.
-    ## This is temporary, I will probable try decode gzip requests eventually.
+    ## This is temporary, I will probably try decode gzip requests eventually.
     var encoding = @[""]
     if find(req, ACCEPT_ENCODING, encoding) != -1:
         if len(encoding) > 0:
@@ -153,6 +158,7 @@ proc removeEncoding*(req: string): string =
         if len(encoding) > 0:
             return req.replace(encoding[0], "")
     return req
+
 
 
 proc excludeData*(req: string): bool = 
