@@ -20,12 +20,14 @@ import cligen
     # FIXME: Investigate weird crash on youtube when browsing videos, only on macos apparently.
 # TODO: See if data is encoded before writing the interaction, if it is, unencode it. EX gzip.
 # TODO: See if it would be possible to inject HTML/scripts in like ZAP does.
+# TODO: Fix websockets, they seem to break. Read on SWITCH PROTOCOL and how it's done.
+# TODO: Tests for various proxy related attacks/dos on my implementation, it will probably be bad
 
 proc setupLogging*() = 
     var stdout = newConsoleLogger(
-        fmtStr = "[$time][$levelname][NemesisMITM]:",
+        fmtStr = "[$time][$levelname][NemesisMITM]::",
         levelThreshold = lvlDebug)
-        #levelThreshold = lvlInfo)
+        # levelThreshold = lvlInfo
 
     var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
     addHandler(stdout)
@@ -33,17 +35,17 @@ proc setupLogging*() =
 
 proc run(host: string = "127.0.0.1", port: int = 8081) =
     setupLogging()
-    log(lvlInfo, fmt"STARTING on {host}:{$port}.")
+    log(lvlInfo, fmt"[*] STARTING on {host}:{$port} --")
     if not dirExists("certs"):
-        log(lvlInfo,"Root CA not found, generating :: certs/ca.pem")
-        log(lvlInfo,"Do not forget to import/use this CA !")
+        log(lvlInfo,"[?] Root CA not found, generating :: certs/ca.pem")
+        log(lvlInfo,"[?] Do not forget to import/use this CA !")
         if not createCA():
             log(lvlError,"[!] Error while creating CA.")
             quit(QuitFailure)
     try:
         waitFor startMITMProxy(host, port)
     except:
-        log(lvlError, "[start] " & getCurrentExceptionMsg())
+        log(lvlError, "[start][ERROR]" & getCurrentExceptionMsg())
 
 when isMainModule:
  dispatch run, help={

@@ -1,5 +1,5 @@
-import std/[asyncdispatch, asyncnet, strutils, 
-            tables]
+import std/[asyncdispatch, asyncnet,
+            strutils, tables]
 import parser
 
 
