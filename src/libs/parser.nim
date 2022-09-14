@@ -95,48 +95,12 @@ proc parseRequest*(request: string, cid: string): seq[tuple[headers: string, bod
             if not (headers.hasKey("requestline") or headers.hasKey("responseline")):
                     log(lvlError, 
                         baseLog & fmt"[{rid}][EMPTY HEADERS !]")
-
             if headers.hasKey("Content-Length"):
                 let contentLength = parseInt(headers["Content-Length"].strip())
                 body = request[index .. index + contentLength - 1]
                 log(lvlDebug, 
                     baseLog & fmt"[{rid}][Content-Length][{contentLength}]")
                 index = index + contentLength 
-
-            elif headers.hasKey("transfer-encoding") or headers.hasKey("Transfer-Encoding"):
-                log(lvlDebug, 
-                    baseLog & fmt"[{rid}][CHUNKED ENCODING]")
-                ## Since i remove the Accept-Encoding header, this should only be chunked.
-                ## But I will add validation.
-                ## Read the chunks and populate the body.
-                var chunks: seq[string]
-                while true:
-                    var chunk_start = request.find("\r\n", start=index)
-                    if chunk_start == -1:
-                        break
-
-                    log(lvlDebug, 
-                        baseLog & fmt"[{rid}][CHUNK_START][{chunk_start}]")
-                    var hex_chunk_size = request[index .. chunk_start - 1]
-
-                    var chunk_size: int
-                    try:
-                        chunk_size = fromHex[int](hex_chunk_size)
-                    except:
-                        chunk_size = 0
-
-                    ## +2 to skip the \r\n after the chunk length
-                    ## -1 for 0 notation
-                    chunks.add(request[chunk_start + 2 .. chunk_start + 2 + chunk_size - 1])
-                    log(lvlDebug, 
-                        baseLog & fmt"[{rid}][CHUNKED][{chunk_size}]")
-
-                    ## +4 to skip \r\n twice
-                    index = chunk_start + chunk_size + 4
-                    if chunk_size == 0:
-                        break
-
-                body = join(chunks, "")
         let interaction = (headers: proxyHeaders(headers), body: body)
         requests.add(interaction)
     return requests
@@ -147,18 +111,43 @@ proc removeEncoding*(req: string): string =
     return req.replace(re"Transfer-Encoding: .*\r\n", "")
 
 
-proc removeUnsupportedEncoding*(req: string): string =
-    ## This simply removes any encodings such as gzip.
-    ## This is temporary, I will probably try decode gzip requests eventually.
-    var encoding = @[""]
-    if find(req, ACCEPT_ENCODING, encoding) != -1:
-        if len(encoding) > 0:
-            return req.replace(encoding[0], "")
-    if find(req, TRANSFER_ENCODING, encoding) != -1:
-        if len(encoding) > 0:
-            return req.replace(encoding[0], "")
-    return req
+proc decode() =
+    ## proc to decode the data from the appropriate transfer-encoding
+    ## -- wip
+    # elif headers.hasKey("transfer-encoding") or headers.hasKey("Transfer-Encoding"):
+    #     log(lvlDebug, 
+    #         baseLog & fmt"[{rid}][CHUNKED ENCODING]")
+    #     ## Since i remove the Accept-Encoding header, this should only be chunked.
+    #     ## But I will add validation.
+    #     ## Read the chunks and populate the body.
+    #     var chunks: seq[string]
+    #     while true:
+    #         var chunk_start = request.find("\r\n", start=index)
+    #         if chunk_start == -1:
+    #             break
 
+    #         log(lvlDebug, 
+    #             baseLog & fmt"[{rid}][CHUNK_START][{chunk_start}]")
+    #         var hex_chunk_size = request[index .. chunk_start - 1]
+
+    #         var chunk_size: int
+    #         try:
+    #             chunk_size = fromHex[int](hex_chunk_size)
+    #         except:
+    #             chunk_size = 0
+
+    #         ## +2 to skip the \r\n after the chunk length
+    #         ## -1 for 0 notation
+    #         chunks.add(request[chunk_start + 2 .. chunk_start + 2 + chunk_size - 1])
+    #         log(lvlDebug, 
+    #             baseLog & fmt"[{rid}][CHUNKED][{chunk_size}]")
+
+    #         ## +4 to skip \r\n twice
+    #         index = chunk_start + chunk_size + 4
+    #         if chunk_size == 0:
+    #             break
+
+    #     body = join(chunks, "")
 
 
 proc excludeData*(req: string): bool = 
