@@ -27,7 +27,7 @@ proc setupLogging*() =
     var stdout = newConsoleLogger(
         fmtStr = "[$time][$levelname][NemesisMITM]::",
         levelThreshold = lvlDebug)
-        # levelThreshold = lvlInfo)
+        # levelThreshold = lvlInfo
 
     var fileLog = newFileLogger("errors.log", levelThreshold=lvlError)
     addHandler(stdout)

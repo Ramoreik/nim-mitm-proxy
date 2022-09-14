@@ -88,7 +88,7 @@ proc mitmHttp(client: AsyncSocket,
     let remote = newAsyncSocket(buffered=false)
     try:
         await remote.connect(host, Port(port))
-        var res_info = await remote.sendRawRequest(req)
+        var res_info = await remote.sendRawRequest(removeEncoding(req))
         await client.send(res_info.headers & res_info.body)
         return req & "\r\n" & res_info.headers & res_info.body
     except:
