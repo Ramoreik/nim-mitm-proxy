@@ -3,10 +3,9 @@ import std/[strformat, strutils,
 import utils
 
 let CERTS_D = "certs"
-let CONFIG_D = "config"
 let CA_KEY = CERTS_D & "/ca.key.pem"
 let CA_FILE = CERTS_D & "/ca.pem"
-let TEMPLATE_FILE = CONFIG_D & "/template.cnf"
+let TEMPLATE_FILE = CERTS_D & "/template.cnf"
 let VALID_HOST = re"^[^']{2,63}"
 
 # CERTMAN :: in charge of generation of certificates and handling of MITM SSL contexts. 
@@ -35,6 +34,10 @@ proc createCA*(): bool =
     let chmod = findExe("chmod")
 
     if not dirExists(CERTS_D): createDir(CERTS_D)
+    if not fileExists(TEMPLATE_FILE): 
+        let tmpl = open(TEMPLATE_FILE, fmWrite)
+        tmpl.write(CNF_TEMPLATE.replace("{{domain}}", "nemesis.example"))
+        tmpl.close()
 
     echo fmt"[*] Creating root key :: " & CA_KEY
     if not execCmdWrap(
@@ -83,18 +86,15 @@ proc generateHostCertificate(host: string): bool =
             openssl & fmt" genrsa -out '{key_file}'"): 
         return false
 
-    if fileExists(TEMPLATE_FILE):
-        var tmpl = open(TEMPLATE_FILE)
-        var host_cnf = open(cnf_file, fmWrite)
-        try:
-            let config = tmpl.readAll().replace("{{domain}}", host) 
-            host_cnf.write(config)
-        except:
-            echo "[!] Error while templating the config file."
-            return false
-        finally:
-            tmpl.close()
-            host_cnf.close()
+    var host_cnf = open(cnf_file, fmWrite)
+    try:
+        let config = CNF_TEMPLATE.replace("{{domain}}", host) 
+        host_cnf.write(config)
+    except:
+        echo "[!] Error while templating the config file."
+        return false
+    finally:
+        host_cnf.close()
 
     echo "[*] Creating csr for: " & host
     if not execCmdWrap(
