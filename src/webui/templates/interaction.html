@@ -1,5 +1,9 @@
 <h3> REQUEST </h3>
-<pre>{{interaction[0].decode('utf-8', errors="ignore")}}</pre>
+<textarea id="response" name="response" rows="25" cols="100" wrap="soft">
+	{{- interaction[0].decode('utf-8', errors="ignore")}}
+</textarea>
 
 <h3> RESPONSE </h3>
-<pre>{{interaction[1].decode('utf-8', errors="ignore")}}</pre>
+<textarea id="response" name="response" rows="25" cols="100" wrap="soft" readonly>
+	{{- interaction[1].decode('utf-8', errors="ignore")}}
+</textarea>

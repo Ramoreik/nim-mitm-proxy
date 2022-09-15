@@ -45,7 +45,15 @@ def get_db():
 
 @app.route('/', methods=["GET"])
 def home():
-    return redirect("/show")
+    return redirect("/history")
+
+
+@app.route("/history", methods=["GET"])
+def history():
+    db = get_db()
+    c = db.cursor()
+    res = c.execute("SELECT rowid, timestamp, host, port FROM interaction").fetchall()
+    return render_template("history.html", requests=res)
 
 
 @app.route("/show", methods=["GET"])

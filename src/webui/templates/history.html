@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  </head>
+  <body>
+    {% if requests %}
+    	{% for r in requests: %}
+      <a href="/get/interaction?target={{r[0]}}"> 
+        {{ r[0] }} | {{ r[1].decode('utf-8') }} ::= {{ r[2].decode('utf-8') }}:{{ r[3] }}
+      </a></br>
+    	{% endfor %}
+    {% endif %}
+  </body>
+</html>
+
