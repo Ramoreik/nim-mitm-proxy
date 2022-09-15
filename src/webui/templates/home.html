@@ -5,11 +5,11 @@
   <body>
     {% if interactions %}
     	{% for interaction in interactions: %}
-  		<a href="/get/interaction?target={{interaction[0]}}"> {{ interaction[0] }} :: {{ interaction[1] }}:{{ interaction[2] }}</a></br>
+  		<a href="/get/interaction?target={{interaction[0]}}"> {{ interaction[0] }} :: {{ interaction[1].decode('utf-8') }}:{{ interaction[2]}}</a></br>
     	{% endfor %}
     {% else %}
       {% for d in domains %}
-        <a href="/show/{{d[0]}}">{{d[0]}}</a></br>
+        <a href="/show/{{d[0].decode('utf-8')}}">{{d[0].decode('utf-8')}}</a></br>
       {% endfor %}
     {% endif %}
   </body>

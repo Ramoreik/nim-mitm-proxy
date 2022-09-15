@@ -39,6 +39,7 @@ def query_domains(query: str) -> []:
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(app.config["db"])
+        g.db.text_factory = bytes
     return g.db
 
 
