@@ -47,8 +47,8 @@ proc saveInteraction*(host: string, port: int, cid: string,
     let timestamp = dt.format("yyyy-MM-dd-HH:mm:ss")
     for i in 1 .. interaction.high():
         if i.mod(2) != 0:
-            let req = interaction[i - 1]
-            let res = interaction[i]
+            let req = interaction[i - 1].headers & interaction[i - 1].body
+            let res = interaction[i].headers & interaction[i].body
             try:
                 let db = open("interactions.db", "", "", "")
                 db.exec(
