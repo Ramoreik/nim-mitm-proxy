@@ -1,5 +1,5 @@
 import std/[osproc, strformat,
-            logging, os, times]
+            logging, os, times, db_sqlite]
 
 let INTERACTIONS_D = "interactions"
 
@@ -14,6 +14,23 @@ proc execCmdWrap*(cmd: string): bool =
     else:
         true
 
+proc initDb(): bool =
+    try:
+        let db = open("interactions.db", "", "", "")
+        db.exec(sql"""
+            CREATE TABLE interaction (
+                    id TEXT,
+                    host TEXT,
+                    port INTERGER,
+                    request BLOB,
+                    response BLOB,
+                    timestamp TEXT
+                )
+            """)
+        db.close()
+    except: return false
+    true
+
 
 proc saveInteraction*(host: string, port: int, cid: string,
                      interaction: seq[tuple[headers: string, body: string]]): bool =
@@ -22,21 +39,24 @@ proc saveInteraction*(host: string, port: int, cid: string,
     # will potentially not use this later and favor a DB of some kind.
     log(lvlDebug, 
         fmt"[{cid}][saveInteraction][Number of Requests][{len(interaction)}]")
-    let dirname = joinPath(INTERACTIONS_D, fmt"{host}-{port}")
-    if not dirExists(INTERACTIONS_D): createDir(INTERACTIONS_D)
-    if not dirExists(dirname): createDir(dirname)
+    if not fileExists("interactions.db"): 
+        if not initDb(): 
+            log(lvlError, fmt"[{cid}][saveInteraction] Unable to create database.")
+            return false
     let dt = now()
     let timestamp = dt.format("yyyy-MM-dd-HH:mm:ss")
     for i in 1 .. interaction.high():
         if i.mod(2) != 0:
             let req = interaction[i - 1]
             let res = interaction[i]
-            var msg = req.headers & req.body & "\n---- SNIP ----\n" & res.headers & res.body 
             try:
-                var f = open(
-                    joinPath(dirname, fmt"{cid}-interaction-{timestamp}-{(i+1)/2}"),
-                    fmWrite)
-                f.write(msg)
-                f.close()
+                let db = open("interactions.db", "", "", "")
+                db.exec(
+                    sql"""
+                    INSERT INTO interaction (id, host, port, request, response, timestamp) 
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    cid, host, port, req, res, timestamp)
+                db.close()
             except: return false
     true
+

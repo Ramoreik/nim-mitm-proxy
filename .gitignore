@@ -2,3 +2,4 @@
 **/certs
 **/errors.log
 **/interactions/*
+**/*.db
