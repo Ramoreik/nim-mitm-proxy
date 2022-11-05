@@ -1,0 +1,9 @@
+kind: pipeline
+name: default
+
+steps:
+  - name: build
+    image: nim:latest
+    commands:
+      - nim c -d:ssl -d:release proxy.nim
+
